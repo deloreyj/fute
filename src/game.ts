@@ -3400,10 +3400,11 @@ class SoccerGame {
     if (this.scores.home === this.scores.away) {
       this.startPenaltyShootout();
     } else {
-      const winner =
-        this.scores.home > this.scores.away ? "Sporting" : "Benfica";
+      const homeWin = this.scores.home > this.scores.away;
       if (this.timeDisplay)
-        this.timeDisplay.textContent = `Full Time - ${winner} win!`;
+        this.timeDisplay.textContent = homeWin
+          ? "YOU WIN!!!!!! :)"
+          : "aww you lost :( try again";
       this.gameState = GameState.MENU;
     }
   }
@@ -3442,10 +3443,11 @@ class SoccerGame {
   /** Finish penalty shootout */
   private finishShootout(): void {
     this.penaltyShootout = false;
-    const winner =
-      this.penaltyScores.home > this.penaltyScores.away ? "Sporting" : "Benfica";
+    const homeWin = this.penaltyScores.home > this.penaltyScores.away;
     if (this.timeDisplay)
-      this.timeDisplay.textContent = `${winner} win on penalties`;
+      this.timeDisplay.textContent = homeWin
+        ? "YOU WIN!!!!!! :)"
+        : "aww you lost :( try again";
     this.gameState = GameState.MENU;
   }
 }
