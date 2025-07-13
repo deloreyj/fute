@@ -1,3 +1,5 @@
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/deloreyj/fute)
+
 # ⚽ The Most Vibin' Soccer Game Ever!
 
 Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting CP vs Benfica dreams! We've packed this bad boy with Three.js magic and turbocharged it with Cloudflare Workers. Get ready to experience some low-poly soccer madness! 🎮
