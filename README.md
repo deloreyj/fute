@@ -43,6 +43,8 @@ Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting C
 ```
 🎮 Arrow Keys = Run around like crazy
 🎮 Spacebar = SHOOT!
+🎮 Z = Pass to teammate
+🎮 D = Slide tackle
 🎮 T = Switch teams
 🎮 Run into ball = Channel your inner Ronaldo
 ```
@@ -52,6 +54,8 @@ Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting C
 ```
 👆 Virtual D-pad for them sick moves
 👆 Big ol' SHOOT button
+👆 PASS button for sweet assists
+👆 TACKLE button to stop opponents
 👆 Semi-transparent so you can see your sick plays
 👆 Just run into the ball to start styling
 ```

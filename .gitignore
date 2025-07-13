@@ -1,5 +1,7 @@
 # prod
+public/game.js
 dist/
+game.js
 
 # dev
 .yarn/

@@ -15,6 +15,99 @@ enum PlayerRole {
 }
 
 /**
+ * Game states
+ */
+enum GameState {
+  MENU = "menu",
+  WALKOUT = "walkout",
+  PLAYING = "playing",
+}
+
+/**
+ * Difficulty levels
+ */
+enum Difficulty {
+  EASY = "easy",
+  MEDIUM = "medium",
+  HARD = "hard",
+}
+
+/**
+ * Player positions
+ */
+enum Position {
+  GK = "GK", // Goalkeeper
+  LB = "LB", // Left Back
+  CB = "CB", // Center Back
+  RB = "RB", // Right Back
+  LM = "LM", // Left Midfielder
+  CM = "CM", // Center Midfielder
+  RM = "RM", // Right Midfielder
+  LW = "LW", // Left Winger
+  ST = "ST", // Striker
+  RW = "RW", // Right Winger
+}
+
+/**
+ * Card types
+ */
+enum CardType {
+  YELLOW = "yellow",
+  RED = "red",
+}
+
+/**
+ * Referee types
+ */
+enum RefereeType {
+  MAIN = "main",
+  ASSISTANT_1 = "assistant1",
+  ASSISTANT_2 = "assistant2",
+}
+
+/**
+ * Player data structure
+ */
+interface Player {
+  mesh: THREE.Mesh;
+  team: TeamType;
+  position: Position;
+  number: number;
+  isHuman: boolean;
+  velocity: THREE.Vector3;
+  targetPosition?: THREE.Vector3;
+  hasBall?: boolean;
+  yellowCards: number;
+  redCard: boolean;
+  lastFoulTime?: number;
+  isTackling?: boolean;
+  tackleTime?: number;
+  isFalling?: boolean;
+  fallTime?: number;
+  isOnGround?: boolean;
+}
+
+/**
+ * Referee data structure
+ */
+interface Referee {
+  mesh: THREE.Mesh;
+  type: RefereeType;
+  position: THREE.Vector3;
+  targetPosition: THREE.Vector3;
+}
+
+/**
+ * Foul data
+ */
+interface Foul {
+  offender: Player;
+  victim: Player;
+  position: THREE.Vector3;
+  severity: number; // 0-1, determines yellow or red
+}
+
+/**
  * Main game class for the soccer game
  */
 class SoccerGame {
@@ -22,12 +115,28 @@ class SoccerGame {
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
 
+  // Game state
+  private gameState: GameState = GameState.MENU;
+  private difficulty: Difficulty = Difficulty.MEDIUM;
+
   // Game objects
-  private player: THREE.Mesh;
+  private players: Player[] = [];
+  private humanPlayer: Player | null = null;
   private ball: THREE.Mesh;
   private goals: THREE.Mesh[] = [];
   private confettiParticles: THREE.Points[] = [];
   private goalkeepers: THREE.Mesh[] = [];
+
+  // Referees
+  private referees: Referee[] = [];
+  private cardDisplay: THREE.Group | null = null;
+  private foulCooldown: number = 0;
+  private lastFoul: Foul | null = null;
+  private showingCard: boolean = false;
+  private cardShowTime: number = 0;
+
+  // UI elements
+  private menuContainer: HTMLDivElement | null = null;
 
   // Movement state
   private keys = {
@@ -37,6 +146,8 @@ class SoccerGame {
     ArrowRight: false,
     Space: false,
     t: false,
+    z: false,
+    d: false,
   };
 
   private lastKeys = {
@@ -46,11 +157,9 @@ class SoccerGame {
     ArrowRight: false,
     Space: false,
     t: false,
+    z: false,
+    d: false,
   };
-
-  // Player physics
-  private playerVelocity = new THREE.Vector3();
-  private playerOnGround = true;
 
   // Ball physics
   private ballVelocity = new THREE.Vector3();
@@ -58,10 +167,12 @@ class SoccerGame {
   // Dribbling state
   private isDribbling = false;
   private dribbleOffset = new THREE.Vector3();
+  private dribblingPlayer: Player | null = null;
 
   // Animation
   private animationTime = 0;
   private lastTime = 0;
+  private walkoutTime = 0;
 
   // Celebration state
   private celebrationTime = 0;
@@ -77,8 +188,8 @@ class SoccerGame {
 
   // Scoring system
   private scores = {
-    home: 0, // Left side (player starts here)
-    away: 0, // Right side
+    home: 0, // Left side (Sporting)
+    away: 0, // Right side (Benfica)
   };
   private scoreboard: THREE.Group | null = null;
 
@@ -111,17 +222,16 @@ class SoccerGame {
       container.appendChild(this.renderer.domElement);
     }
 
-    // Initialize game objects
+    // Initialize scene objects (but don't create players yet)
     this.setupLighting();
     this.createField();
     this.createStadium();
-    this.player = this.createPlayer(TeamType.SPORTING);
     this.ball = this.createBall();
     this.createGoalkeepers();
 
     // Set up controls
     this.setupControls();
-    this.setupTouchControls(); // Add this line
+    this.setupTouchControls();
 
     // Handle window resize
     window.addEventListener("resize", () => this.onWindowResize());
@@ -133,8 +243,365 @@ class SoccerGame {
       once: true,
     });
 
+    // Show menu first
+    this.showMenu();
+
     // Start game loop
     this.animate();
+  }
+
+  /**
+   * Show the difficulty selection menu
+   */
+  private showMenu(): void {
+    // Hide the game canvas initially
+    this.renderer.domElement.style.opacity = "0.3";
+
+    // Create menu container
+    this.menuContainer = document.createElement("div");
+    this.menuContainer.style.position = "fixed";
+    this.menuContainer.style.top = "50%";
+    this.menuContainer.style.left = "50%";
+    this.menuContainer.style.transform = "translate(-50%, -50%)";
+    this.menuContainer.style.textAlign = "center";
+    this.menuContainer.style.color = "white";
+    this.menuContainer.style.fontFamily = "Arial, sans-serif";
+    this.menuContainer.style.zIndex = "1000";
+
+    // Title
+    const title = document.createElement("h1");
+    title.textContent = "⚽ SPORTING vs BENFICA ⚽";
+    title.style.fontSize = "48px";
+    title.style.marginBottom = "20px";
+    title.style.textShadow = "2px 2px 4px rgba(0,0,0,0.8)";
+    this.menuContainer.appendChild(title);
+
+    // Subtitle
+    const subtitle = document.createElement("p");
+    subtitle.textContent = "Choose Your Difficulty";
+    subtitle.style.fontSize = "24px";
+    subtitle.style.marginBottom = "40px";
+    this.menuContainer.appendChild(subtitle);
+
+    // Difficulty buttons
+    const difficulties = [
+      {
+        level: Difficulty.EASY,
+        label: "🟢 EASY",
+        desc: "Chill vibes, perfect for beginners",
+      },
+      {
+        level: Difficulty.MEDIUM,
+        label: "🟡 MEDIUM",
+        desc: "Balanced gameplay for most players",
+      },
+      {
+        level: Difficulty.HARD,
+        label: "🔴 HARD",
+        desc: "For the real pros only!",
+      },
+    ];
+
+    difficulties.forEach(({ level, label, desc }) => {
+      const button = document.createElement("button");
+      button.textContent = label;
+      button.style.display = "block";
+      button.style.margin = "10px auto";
+      button.style.padding = "15px 40px";
+      button.style.fontSize = "20px";
+      button.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+      button.style.color = "white";
+      button.style.border = "2px solid white";
+      button.style.borderRadius = "10px";
+      button.style.cursor = "pointer";
+      button.style.transition = "all 0.3s";
+      button.style.width = "300px";
+
+      const description = document.createElement("div");
+      description.textContent = desc;
+      description.style.fontSize = "14px";
+      description.style.marginTop = "5px";
+      description.style.opacity = "0.8";
+      button.appendChild(description);
+
+      button.addEventListener("mouseover", () => {
+        button.style.backgroundColor = "rgba(255, 255, 255, 0.4)";
+        button.style.transform = "scale(1.05)";
+      });
+
+      button.addEventListener("mouseout", () => {
+        button.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+        button.style.transform = "scale(1)";
+      });
+
+      button.addEventListener("click", () => {
+        this.difficulty = level;
+        this.startMatch();
+      });
+
+      this.menuContainer!.appendChild(button);
+    });
+
+    document.body.appendChild(this.menuContainer);
+  }
+
+  /**
+   * Start the match after difficulty selection
+   */
+  private startMatch(): void {
+    // Remove menu
+    if (this.menuContainer) {
+      this.menuContainer.remove();
+      this.menuContainer = null;
+    }
+
+    // Show game canvas
+    this.renderer.domElement.style.opacity = "1";
+
+    // Create teams
+    this.createTeams();
+
+    // Create referees
+    this.createReferees();
+
+    // Create card display
+    this.createCardDisplay();
+
+    // Start walkout animation
+    this.gameState = GameState.WALKOUT;
+    this.walkoutTime = 0;
+  }
+
+  /**
+   * Create both teams with 11 players each
+   */
+  private createTeams(): void {
+    // Clear any existing players
+    this.players.forEach((player) => {
+      this.scene.remove(player.mesh);
+    });
+    this.players = [];
+
+    // Formation: 4-3-3
+    const formations = {
+      [TeamType.SPORTING]: [
+        { pos: Position.GK, x: -50, z: 0, num: 1 },
+        { pos: Position.LB, x: -35, z: -20, num: 2 },
+        { pos: Position.CB, x: -35, z: -7, num: 3 },
+        { pos: Position.CB, x: -35, z: 7, num: 4 },
+        { pos: Position.RB, x: -35, z: 20, num: 5 },
+        { pos: Position.LM, x: -15, z: -15, num: 6 },
+        { pos: Position.CM, x: -15, z: 0, num: 8 },
+        { pos: Position.RM, x: -15, z: 15, num: 10 },
+        { pos: Position.LW, x: 5, z: -20, num: 11 },
+        { pos: Position.ST, x: 5, z: 0, num: 9 },
+        { pos: Position.RW, x: 5, z: 20, num: 7 },
+      ],
+      [TeamType.BENFICA]: [
+        { pos: Position.GK, x: 50, z: 0, num: 1 },
+        { pos: Position.LB, x: 35, z: 20, num: 2 },
+        { pos: Position.CB, x: 35, z: 7, num: 3 },
+        { pos: Position.CB, x: 35, z: -7, num: 4 },
+        { pos: Position.RB, x: 35, z: -20, num: 5 },
+        { pos: Position.LM, x: 15, z: 15, num: 6 },
+        { pos: Position.CM, x: 15, z: 0, num: 8 },
+        { pos: Position.RM, x: 15, z: -15, num: 10 },
+        { pos: Position.LW, x: -5, z: 20, num: 11 },
+        { pos: Position.ST, x: -5, z: 0, num: 9 },
+        { pos: Position.RW, x: -5, z: -20, num: 7 },
+      ],
+    };
+
+    // Create Sporting team
+    formations[TeamType.SPORTING].forEach((info, index) => {
+      const player: Player = {
+        mesh: this.createPlayer(TeamType.SPORTING),
+        team: TeamType.SPORTING,
+        position: info.pos,
+        number: info.num,
+        isHuman: index === 9, // Make the striker the human player
+        velocity: new THREE.Vector3(),
+        yellowCards: 0,
+        redCard: false,
+      };
+
+      // Position for walkout (in tunnel)
+      player.mesh.position.set(-80, 0, -30 + index * 3);
+
+      this.players.push(player);
+
+      if (player.isHuman) {
+        this.humanPlayer = player;
+        this.currentTeam = TeamType.SPORTING;
+      }
+    });
+
+    // Create Benfica team
+    formations[TeamType.BENFICA].forEach((info, index) => {
+      const player: Player = {
+        mesh: this.createPlayer(TeamType.BENFICA),
+        team: TeamType.BENFICA,
+        position: info.pos,
+        number: info.num,
+        isHuman: false,
+        velocity: new THREE.Vector3(),
+        yellowCards: 0,
+        redCard: false,
+      };
+
+      // Position for walkout (in tunnel)
+      player.mesh.position.set(-80, 0, 5 + index * 3);
+
+      this.players.push(player);
+    });
+  }
+
+  /**
+   * Create referees
+   */
+  private createReferees(): void {
+    // Clear existing referees
+    this.referees.forEach((ref) => {
+      this.scene.remove(ref.mesh);
+    });
+    this.referees = [];
+
+    // Create main referee
+    const mainRef: Referee = {
+      mesh: this.createReferee(RefereeType.MAIN),
+      type: RefereeType.MAIN,
+      position: new THREE.Vector3(0, 0, 0),
+      targetPosition: new THREE.Vector3(0, 0, 0),
+    };
+    mainRef.mesh.position.set(0, 0, 0);
+    this.referees.push(mainRef);
+
+    // Create assistant referees (linesmen)
+    const assistant1: Referee = {
+      mesh: this.createReferee(RefereeType.ASSISTANT_1),
+      type: RefereeType.ASSISTANT_1,
+      position: new THREE.Vector3(-50, 0, -40),
+      targetPosition: new THREE.Vector3(-50, 0, -40),
+    };
+    assistant1.mesh.position.set(-50, 0, -40);
+    this.referees.push(assistant1);
+
+    const assistant2: Referee = {
+      mesh: this.createReferee(RefereeType.ASSISTANT_2),
+      type: RefereeType.ASSISTANT_2,
+      position: new THREE.Vector3(50, 0, 40),
+      targetPosition: new THREE.Vector3(50, 0, 40),
+    };
+    assistant2.mesh.position.set(50, 0, 40);
+    this.referees.push(assistant2);
+  }
+
+  /**
+   * Create a referee mesh
+   */
+  private createReferee(type: RefereeType): THREE.Mesh {
+    const refGroup = new THREE.Group();
+
+    // Body (black shirt)
+    const bodyGeometry = new THREE.BoxGeometry(0.8, 1.2, 0.4);
+    const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x000000 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 1.5;
+    body.castShadow = true;
+    refGroup.add(body);
+
+    // Shorts (black)
+    const shortsGeometry = new THREE.BoxGeometry(0.8, 0.4, 0.4);
+    const shortsMaterial = new THREE.MeshPhongMaterial({ color: 0x000000 });
+    const shorts = new THREE.Mesh(shortsGeometry, shortsMaterial);
+    shorts.position.y = 0.8;
+    refGroup.add(shorts);
+
+    // Head
+    const headGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+    const headMaterial = new THREE.MeshPhongMaterial({ color: 0xfdbcb4 });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.y = 2.3;
+    head.castShadow = true;
+    refGroup.add(head);
+
+    // Legs (black socks)
+    const legGeometry = new THREE.BoxGeometry(0.15, 0.6, 0.15);
+    const legMaterial = new THREE.MeshPhongMaterial({ color: 0x000000 });
+    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+    leftLeg.position.set(-0.2, 0.3, 0);
+    refGroup.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+    rightLeg.position.set(0.2, 0.3, 0);
+    refGroup.add(rightLeg);
+
+    // Arms
+    const armGeometry = new THREE.BoxGeometry(0.15, 0.8, 0.15);
+    const armMaterial = new THREE.MeshPhongMaterial({ color: 0xfdbcb4 });
+    const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+    leftArm.position.set(-0.5, 1.5, 0);
+    refGroup.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+    rightArm.position.set(0.5, 1.5, 0);
+    refGroup.add(rightArm);
+
+    // Add flag for assistant referees
+    if (type === RefereeType.ASSISTANT_1 || type === RefereeType.ASSISTANT_2) {
+      const flagPoleGeometry = new THREE.CylinderGeometry(0.02, 0.02, 1.5);
+      const flagPoleMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
+      const flagPole = new THREE.Mesh(flagPoleGeometry, flagPoleMaterial);
+      flagPole.position.set(0.7, 1.8, 0);
+      refGroup.add(flagPole);
+
+      const flagGeometry = new THREE.PlaneGeometry(0.5, 0.4);
+      const flagMaterial = new THREE.MeshPhongMaterial({
+        color: type === RefereeType.ASSISTANT_1 ? 0xff0000 : 0xffff00,
+        side: THREE.DoubleSide,
+      });
+      const flag = new THREE.Mesh(flagGeometry, flagMaterial);
+      flag.position.set(0.95, 2.5, 0);
+      refGroup.add(flag);
+    }
+
+    this.scene.add(refGroup);
+    return refGroup as unknown as THREE.Mesh;
+  }
+
+  /**
+   * Create card display
+   */
+  private createCardDisplay(): void {
+    this.cardDisplay = new THREE.Group();
+
+    // Yellow card
+    const yellowCardGeometry = new THREE.PlaneGeometry(0.6, 0.9);
+    const yellowCardMaterial = new THREE.MeshPhongMaterial({
+      color: 0xffff00,
+      side: THREE.DoubleSide,
+      emissive: 0xffff00,
+      emissiveIntensity: 0.3,
+    });
+    const yellowCard = new THREE.Mesh(yellowCardGeometry, yellowCardMaterial);
+    yellowCard.name = "yellowCard";
+    yellowCard.visible = false;
+    this.cardDisplay.add(yellowCard);
+
+    // Red card
+    const redCardGeometry = new THREE.PlaneGeometry(0.6, 0.9);
+    const redCardMaterial = new THREE.MeshPhongMaterial({
+      color: 0xff0000,
+      side: THREE.DoubleSide,
+      emissive: 0xff0000,
+      emissiveIntensity: 0.3,
+    });
+    const redCard = new THREE.Mesh(redCardGeometry, redCardMaterial);
+    redCard.name = "redCard";
+    redCard.visible = false;
+    this.cardDisplay.add(redCard);
+
+    this.scene.add(this.cardDisplay);
   }
 
   /**
@@ -1308,6 +1775,100 @@ class SoccerGame {
     });
 
     controlsContainer.appendChild(shootButton);
+
+    // Create pass button (Z)
+    const passButton = document.createElement("button");
+    passButton.style.position = "absolute";
+    passButton.style.bottom = "130px";
+    passButton.style.right = "40px";
+    passButton.style.width = "70px";
+    passButton.style.height = "70px";
+    passButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+    passButton.style.border = "2px solid rgba(255, 255, 255, 0.5)";
+    passButton.style.borderRadius = "50%";
+    passButton.style.cursor = "pointer";
+    passButton.style.display = "flex";
+    passButton.style.alignItems = "center";
+    passButton.style.justifyContent = "center";
+    passButton.style.fontSize = "16px";
+    passButton.style.fontWeight = "bold";
+    passButton.style.color = "rgba(255, 255, 255, 0.8)";
+    passButton.style.userSelect = "none";
+    passButton.style.webkitUserSelect = "none";
+    passButton.style.touchAction = "none";
+    passButton.style.pointerEvents = "auto";
+    passButton.textContent = "PASS";
+
+    // Pass button events
+    passButton.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      this.keys.z = true;
+      passButton.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+      passButton.style.transform = "scale(0.95)";
+    });
+
+    passButton.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      this.keys.z = false;
+      passButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      passButton.style.transform = "scale(1)";
+    });
+
+    passButton.addEventListener("touchcancel", (e) => {
+      e.preventDefault();
+      this.keys.z = false;
+      passButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      passButton.style.transform = "scale(1)";
+    });
+
+    controlsContainer.appendChild(passButton);
+
+    // Create tackle button (D)
+    const tackleButton = document.createElement("button");
+    tackleButton.style.position = "absolute";
+    tackleButton.style.bottom = "40px";
+    tackleButton.style.right = "130px";
+    tackleButton.style.width = "70px";
+    tackleButton.style.height = "70px";
+    tackleButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+    tackleButton.style.border = "2px solid rgba(255, 255, 255, 0.5)";
+    tackleButton.style.borderRadius = "50%";
+    tackleButton.style.cursor = "pointer";
+    tackleButton.style.display = "flex";
+    tackleButton.style.alignItems = "center";
+    tackleButton.style.justifyContent = "center";
+    tackleButton.style.fontSize = "16px";
+    tackleButton.style.fontWeight = "bold";
+    tackleButton.style.color = "rgba(255, 255, 255, 0.8)";
+    tackleButton.style.userSelect = "none";
+    tackleButton.style.webkitUserSelect = "none";
+    tackleButton.style.touchAction = "none";
+    tackleButton.style.pointerEvents = "auto";
+    tackleButton.textContent = "TACKLE";
+
+    // Tackle button events
+    tackleButton.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      this.keys.d = true;
+      tackleButton.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+      tackleButton.style.transform = "scale(0.95)";
+    });
+
+    tackleButton.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      this.keys.d = false;
+      tackleButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      tackleButton.style.transform = "scale(1)";
+    });
+
+    tackleButton.addEventListener("touchcancel", (e) => {
+      e.preventDefault();
+      this.keys.d = false;
+      tackleButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      tackleButton.style.transform = "scale(1)";
+    });
+
+    controlsContainer.appendChild(tackleButton);
   }
 
   /**
@@ -1578,161 +2139,389 @@ class SoccerGame {
   }
 
   /**
-   * Update game logic
+   * Update walkout animation
    */
-  private update(deltaTime: number): void {
-    const moveSpeed = 15 * deltaTime; // Increased from 10 to 15
+  private updateWalkout(deltaTime: number): void {
+    this.walkoutTime += deltaTime;
 
-    // Update animation time
-    this.animationTime += deltaTime;
+    // Move players out from tunnel
+    const walkSpeed = 5 * deltaTime;
 
-    // Track if player is moving
+    this.players.forEach((player, index) => {
+      if (player.team === TeamType.SPORTING) {
+        // Sporting walks to the left side
+        const targetX =
+          -50 + (player.position === Position.GK ? 0 : 15 + index * 2);
+        if (player.mesh.position.x < targetX) {
+          player.mesh.position.x += walkSpeed;
+          // Animate walking
+          this.animatePlayerWalking(player, deltaTime);
+        }
+      } else {
+        // Benfica walks to the right side
+        const targetX =
+          50 - (player.position === Position.GK ? 0 : 15 + (index - 11) * 2);
+        if (player.mesh.position.x < targetX) {
+          player.mesh.position.x += walkSpeed;
+          // Animate walking
+          this.animatePlayerWalking(player, deltaTime);
+        }
+      }
+    });
+
+    // After 5 seconds, position players and start the game
+    if (this.walkoutTime > 5) {
+      this.positionPlayersForKickoff();
+      this.gameState = GameState.PLAYING;
+    }
+  }
+
+  /**
+   * Position players for kickoff
+   */
+  private positionPlayersForKickoff(): void {
+    const formations = {
+      [TeamType.SPORTING]: [
+        { pos: Position.GK, x: -50, z: 0 },
+        { pos: Position.LB, x: -35, z: -20 },
+        { pos: Position.CB, x: -35, z: -7 },
+        { pos: Position.CB, x: -35, z: 7 },
+        { pos: Position.RB, x: -35, z: 20 },
+        { pos: Position.LM, x: -15, z: -15 },
+        { pos: Position.CM, x: -15, z: 0 },
+        { pos: Position.RM, x: -15, z: 15 },
+        { pos: Position.LW, x: 5, z: -20 },
+        { pos: Position.ST, x: 5, z: 0 },
+        { pos: Position.RW, x: 5, z: 20 },
+      ],
+      [TeamType.BENFICA]: [
+        { pos: Position.GK, x: 50, z: 0 },
+        { pos: Position.LB, x: 35, z: 20 },
+        { pos: Position.CB, x: 35, z: 7 },
+        { pos: Position.CB, x: 35, z: -7 },
+        { pos: Position.RB, x: 35, z: -20 },
+        { pos: Position.LM, x: 15, z: 15 },
+        { pos: Position.CM, x: 15, z: 0 },
+        { pos: Position.RM, x: 15, z: -15 },
+        { pos: Position.LW, x: -5, z: 20 },
+        { pos: Position.ST, x: -5, z: 0 },
+        { pos: Position.RW, x: -5, z: -20 },
+      ],
+    };
+
+    this.players.forEach((player) => {
+      const formation =
+        player.team === TeamType.SPORTING
+          ? formations[TeamType.SPORTING]
+          : formations[TeamType.BENFICA];
+      const pos = formation.find((f) => f.pos === player.position);
+      if (pos) {
+        player.mesh.position.x = pos.x;
+        player.mesh.position.z = pos.z;
+        player.targetPosition = new THREE.Vector3(pos.x, 0, pos.z);
+      }
+    });
+
+    // Position ball at center
+    this.ball.position.set(0, 0.5, 0);
+    this.ballVelocity.set(0, 0, 0);
+  }
+
+  /**
+   * Update human player
+   */
+  private updateHumanPlayer(deltaTime: number, moveSpeed: number): void {
+    if (!this.humanPlayer) return;
+
     let isMoving = false;
 
     // Player movement
     if (this.keys.ArrowUp) {
-      this.player.position.z -= moveSpeed;
+      this.humanPlayer.mesh.position.z -= moveSpeed;
       isMoving = true;
     }
     if (this.keys.ArrowDown) {
-      this.player.position.z += moveSpeed;
+      this.humanPlayer.mesh.position.z += moveSpeed;
       isMoving = true;
     }
     if (this.keys.ArrowLeft) {
-      this.player.position.x -= moveSpeed;
-      this.player.rotation.y = Math.PI / 2;
+      this.humanPlayer.mesh.position.x -= moveSpeed;
+      this.humanPlayer.mesh.rotation.y = Math.PI / 2;
       isMoving = true;
     }
     if (this.keys.ArrowRight) {
-      this.player.position.x += moveSpeed;
-      this.player.rotation.y = -Math.PI / 2;
+      this.humanPlayer.mesh.position.x += moveSpeed;
+      this.humanPlayer.mesh.rotation.y = -Math.PI / 2;
       isMoving = true;
     }
 
-    // Update facing direction based on movement
+    // Update facing direction
     if (this.keys.ArrowUp && !this.keys.ArrowLeft && !this.keys.ArrowRight) {
-      this.player.rotation.y = -Math.PI / 2;
+      this.humanPlayer.mesh.rotation.y = -Math.PI / 2;
     }
     if (this.keys.ArrowDown && !this.keys.ArrowLeft && !this.keys.ArrowRight) {
-      this.player.rotation.y = Math.PI / 2;
+      this.humanPlayer.mesh.rotation.y = Math.PI / 2;
     }
 
-    // Keep player within field bounds
-    const fieldWidth = 75;
-    const fieldLength = 115;
-    this.player.position.x = Math.max(
-      -fieldLength / 2 + 1,
-      Math.min(fieldLength / 2 - 1, this.player.position.x)
-    );
-    this.player.position.z = Math.max(
-      -fieldWidth / 2 + 1,
-      Math.min(fieldWidth / 2 - 1, this.player.position.z)
-    );
-
-    // Animate legs when moving
-    if (isMoving && this.playerOnGround && this.player.userData) {
-      const swingAmount = Math.sin(this.animationTime * 10) * 0.3;
-
-      // Animate legs
-      this.player.userData.bones.leftLeg.rotation.x = swingAmount;
-      this.player.userData.bones.rightLeg.rotation.x = -swingAmount;
-
-      // Subtle arm swing
-      this.player.userData.bones.leftArm.rotation.x = -swingAmount * 0.5;
-      this.player.userData.bones.rightArm.rotation.x = swingAmount * 0.5;
-    } else if (this.player.userData) {
-      // Reset to idle position
-      this.player.userData.bones.leftLeg.rotation.x = 0;
-      this.player.userData.bones.rightLeg.rotation.x = 0;
-      this.player.userData.bones.leftArm.rotation.x = 0;
-      this.player.userData.bones.rightArm.rotation.x = 0;
+    // Animate player
+    if (isMoving) {
+      this.animatePlayerWalking(this.humanPlayer, deltaTime);
+    } else {
+      this.resetPlayerAnimation(this.humanPlayer);
     }
 
-    // Shoot ball with Space
+    // Shooting
     if (this.keys.Space) {
-      // Calculate distance to ball
-      const distance = this.player.position.distanceTo(this.ball.position);
-
-      // If close enough to ball, kick it
+      const distance = this.humanPlayer.mesh.position.distanceTo(
+        this.ball.position
+      );
       if (distance < 2.5) {
-        // Apply force to ball in player's facing direction
-        const kickPower = 25; // Reduced from 40 to 25
-        this.ballVelocity.x = -Math.sin(this.player.rotation.y) * kickPower;
-        this.ballVelocity.z = -Math.cos(this.player.rotation.y) * kickPower;
-        this.ballVelocity.y = 5; // Small upward kick
+        const kickPower = 25;
+        this.ballVelocity.x =
+          -Math.sin(this.humanPlayer.mesh.rotation.y) * kickPower;
+        this.ballVelocity.z =
+          -Math.cos(this.humanPlayer.mesh.rotation.y) * kickPower;
+        this.ballVelocity.y = 5;
 
-        // Stop dribbling when kicking
         this.isDribbling = false;
-        this.playKickSound(); // Play kick sound
+        this.dribblingPlayer = null;
+        this.playKickSound();
       }
     }
 
-    // Dribbling mechanics
-    const ballDistance = this.player.position.distanceTo(this.ball.position);
+    // Passing (Z key)
+    if (this.keys.z && !this.lastKeys.z) {
+      const distance = this.humanPlayer.mesh.position.distanceTo(
+        this.ball.position
+      );
+      if (distance < 2.5) {
+        this.passBall(this.humanPlayer);
+        this.playKickSound();
+      }
+    }
 
-    // Start dribbling if we run into the ball
-    if (!this.isDribbling && ballDistance < 1.5 && this.ball.position.y < 1) {
-      this.isDribbling = true;
-      // Calculate initial offset from player
-      this.dribbleOffset.subVectors(this.ball.position, this.player.position);
-      this.dribbleOffset.y = 0; // Keep it on the ground
+    // Slide tackle (D key)
+    if (this.keys.d && !this.lastKeys.d) {
+      this.slideTackle(this.humanPlayer);
+    }
+
+    // Dribbling
+    this.updateDribbling(this.humanPlayer, deltaTime);
+  }
+
+  /**
+   * Update AI players
+   */
+  private updateAIPlayers(deltaTime: number): void {
+    this.players.forEach((player) => {
+      if (player.isHuman || player.redCard) return;
+
+      // Basic AI behavior based on difficulty
+      const aiSpeed =
+        this.difficulty === Difficulty.EASY
+          ? 5
+          : this.difficulty === Difficulty.MEDIUM
+          ? 8
+          : 10;
+
+      // Simple AI: move towards ball if close
+      const distanceToBall = player.mesh.position.distanceTo(
+        this.ball.position
+      );
+
+      if (distanceToBall < 30 && !this.dribblingPlayer) {
+        // Move towards ball
+        const direction = new THREE.Vector3();
+        direction.subVectors(this.ball.position, player.mesh.position);
+        direction.y = 0;
+        direction.normalize();
+
+        player.mesh.position.x += direction.x * aiSpeed * deltaTime;
+        player.mesh.position.z += direction.z * aiSpeed * deltaTime;
+
+        // Face the ball
+        player.mesh.lookAt(
+          this.ball.position.x,
+          player.mesh.position.y,
+          this.ball.position.z
+        );
+
+        // Animate walking
+        this.animatePlayerWalking(player, deltaTime);
+
+        // Try to kick if very close
+        if (distanceToBall < 2.5 && Math.random() < 0.1) {
+          const kickPower = 20;
+          this.ballVelocity.x = direction.x * kickPower;
+          this.ballVelocity.z = direction.z * kickPower;
+          this.ballVelocity.y = 3;
+          this.playKickSound();
+        }
+
+        // Try to tackle if opponent has ball
+        if (this.dribblingPlayer && this.dribblingPlayer.team !== player.team) {
+          const distanceToDribbler = player.mesh.position.distanceTo(
+            this.dribblingPlayer.mesh.position
+          );
+
+          // Attempt slide tackle if close enough
+          if (distanceToDribbler < 4 && Math.random() < 0.05) {
+            this.slideTackle(player);
+          }
+        }
+      } else if (player.targetPosition) {
+        // Return to position
+        const distanceToTarget = player.mesh.position.distanceTo(
+          player.targetPosition
+        );
+        if (distanceToTarget > 2) {
+          const direction = new THREE.Vector3();
+          direction.subVectors(player.targetPosition, player.mesh.position);
+          direction.y = 0;
+          direction.normalize();
+
+          player.mesh.position.x += direction.x * aiSpeed * 0.5 * deltaTime;
+          player.mesh.position.z += direction.z * aiSpeed * 0.5 * deltaTime;
+
+          this.animatePlayerWalking(player, deltaTime);
+        } else {
+          this.resetPlayerAnimation(player);
+        }
+      }
+    });
+  }
+
+  /**
+   * Update dribbling for a player
+   */
+  private updateDribbling(player: Player, deltaTime: number): void {
+    const ballDistance = player.mesh.position.distanceTo(this.ball.position);
+
+    // Start dribbling
+    if (
+      !this.dribblingPlayer &&
+      ballDistance < 1.5 &&
+      this.ball.position.y < 1
+    ) {
+      this.dribblingPlayer = player;
+      this.dribbleOffset.subVectors(this.ball.position, player.mesh.position);
+      this.dribbleOffset.y = 0;
     }
 
     // Continue dribbling
-    if (this.isDribbling) {
-      // Stop dribbling if ball gets too far (kicked or separated)
+    if (this.dribblingPlayer === player) {
       if (
         ballDistance > 3 ||
         Math.abs(this.ballVelocity.x) > 5 ||
         Math.abs(this.ballVelocity.z) > 5
       ) {
-        this.isDribbling = false;
+        this.dribblingPlayer = null;
       } else {
-        // Keep ball in front of player based on facing direction
         const dribbleDistance = 1.2;
         const targetX =
-          this.player.position.x -
-          Math.sin(this.player.rotation.y) * dribbleDistance;
+          player.mesh.position.x -
+          Math.sin(player.mesh.rotation.y) * dribbleDistance;
         const targetZ =
-          this.player.position.z -
-          Math.cos(this.player.rotation.y) * dribbleDistance;
+          player.mesh.position.z -
+          Math.cos(player.mesh.rotation.y) * dribbleDistance;
 
-        // Smoothly move ball to target position
         const lerpFactor = 0.2;
         this.ball.position.x += (targetX - this.ball.position.x) * lerpFactor;
         this.ball.position.z += (targetZ - this.ball.position.z) * lerpFactor;
 
-        // Add bounce effect when moving
-        if (isMoving) {
-          const bounceHeight =
-            0.5 + Math.abs(Math.sin(this.animationTime * 8)) * 0.15;
-          this.ball.position.y = bounceHeight;
-        } else {
-          this.ball.position.y = 0.5; // Keep at ground level when stationary
-        }
+        const bounceHeight =
+          0.5 + Math.abs(Math.sin(this.animationTime * 8)) * 0.15;
+        this.ball.position.y = bounceHeight;
 
-        // Reduce ball velocity when dribbling
         this.ballVelocity.multiplyScalar(0.8);
-
-        // Add slight random movement for realistic dribbling
-        if (isMoving) {
-          this.ball.position.x += (Math.random() - 0.5) * 0.05;
-          this.ball.position.z += (Math.random() - 0.5) * 0.05;
-
-          // Rotate ball based on movement direction
-          const moveDir = new THREE.Vector3(
-            -Math.sin(this.player.rotation.y),
-            0,
-            -Math.cos(this.player.rotation.y)
-          );
-          this.ball.rotation.x -= moveDir.z * 0.2;
-          this.ball.rotation.z += moveDir.x * 0.2;
-        }
       }
     }
+  }
 
-    // Team switching
-    if (this.keys.t && !this.lastKeys.t) {
+  /**
+   * Animate player walking
+   */
+  private animatePlayerWalking(player: Player, deltaTime: number): void {
+    if (!player.mesh.userData || !player.mesh.userData.bones) return;
+
+    const swingAmount = Math.sin(this.animationTime * 10) * 0.3;
+    player.mesh.userData.bones.leftLeg.rotation.x = swingAmount;
+    player.mesh.userData.bones.rightLeg.rotation.x = -swingAmount;
+    player.mesh.userData.bones.leftArm.rotation.x = -swingAmount * 0.5;
+    player.mesh.userData.bones.rightArm.rotation.x = swingAmount * 0.5;
+  }
+
+  /**
+   * Reset player animation
+   */
+  private resetPlayerAnimation(player: Player): void {
+    if (!player.mesh.userData || !player.mesh.userData.bones) return;
+
+    player.mesh.userData.bones.leftLeg.rotation.x = 0;
+    player.mesh.userData.bones.rightLeg.rotation.x = 0;
+    player.mesh.userData.bones.leftArm.rotation.x = 0;
+    player.mesh.userData.bones.rightArm.rotation.x = 0;
+  }
+
+  /**
+   * Update game logic
+   */
+  private update(deltaTime: number): void {
+    const moveSpeed = 15 * deltaTime;
+
+    // Update animation time
+    this.animationTime += deltaTime;
+
+    // Handle different game states
+    if (this.gameState === GameState.WALKOUT) {
+      this.updateWalkout(deltaTime);
+      return;
+    } else if (this.gameState === GameState.MENU) {
+      return;
+    }
+
+    // Only update game when playing
+    if (this.gameState !== GameState.PLAYING) {
+      return;
+    }
+
+    // Update human player
+    if (this.humanPlayer) {
+      this.updateHumanPlayer(deltaTime, moveSpeed);
+    }
+
+    // Update AI players
+    this.updateAIPlayers(deltaTime);
+
+    // Update referees
+    this.updateReferees(deltaTime);
+
+    // Check for fouls
+    this.checkForFouls();
+
+    // Update tackle mechanics
+    this.updateTackles(deltaTime);
+
+    // Check for running tackles
+    this.checkRunningTackles();
+
+    // Keep players within field bounds
+    const fieldWidth = 75;
+    const fieldLength = 115;
+
+    this.players.forEach((player) => {
+      player.mesh.position.x = Math.max(
+        -fieldLength / 2 + 1,
+        Math.min(fieldLength / 2 - 1, player.mesh.position.x)
+      );
+      player.mesh.position.z = Math.max(
+        -fieldWidth / 2 + 1,
+        Math.min(fieldWidth / 2 - 1, player.mesh.position.z)
+      );
+    });
+
+    // Team switching for human player
+    if (this.keys.t && !this.lastKeys.t && this.humanPlayer) {
       // Toggle team
       this.currentTeam =
         this.currentTeam === TeamType.SPORTING
@@ -1740,20 +2529,21 @@ class SoccerGame {
           : TeamType.SPORTING;
 
       // Save current position and rotation
-      const currentPos = this.player.position.clone();
-      const currentRot = this.player.rotation.clone();
+      const currentPos = this.humanPlayer.mesh.position.clone();
+      const currentRot = this.humanPlayer.mesh.rotation.clone();
 
-      // Remove old player
-      this.scene.remove(this.player);
+      // Remove old player mesh
+      this.scene.remove(this.humanPlayer.mesh);
 
-      // Create new player with different team
-      this.player = this.createPlayer(this.currentTeam);
-      this.player.position.copy(currentPos);
-      this.player.rotation.copy(currentRot);
+      // Create new player mesh with different team
+      this.humanPlayer.mesh = this.createPlayer(this.currentTeam);
+      this.humanPlayer.mesh.position.copy(currentPos);
+      this.humanPlayer.mesh.rotation.copy(currentRot);
+      this.humanPlayer.team = this.currentTeam;
     }
 
-    // Update ball physics (skip if dribbling)
-    if (!this.isDribbling) {
+    // Update ball physics
+    if (!this.dribblingPlayer) {
       // Apply velocity
       this.ball.position.add(
         this.ballVelocity.clone().multiplyScalar(deltaTime)
@@ -1850,8 +2640,10 @@ class SoccerGame {
         this.ballVelocity.set(0, 0, 0);
         this.isDribbling = false;
 
-        // Reset player position
-        this.player.position.set(-fieldLength / 4, 0.5, 0);
+        // Reset human player position if exists
+        if (this.humanPlayer) {
+          this.humanPlayer.mesh.position.set(-fieldLength / 4, 0.5, 0);
+        }
       }
     });
 
@@ -1899,11 +2691,17 @@ class SoccerGame {
       return true;
     });
 
-    // Camera follow player from sideline (FIFA-style)
-    this.camera.position.x = this.player.position.x;
-    this.camera.position.y = 25;
-    this.camera.position.z = 50;
-    this.camera.lookAt(this.player.position.x, 0, this.player.position.z);
+    // Camera follow human player from sideline (FIFA-style)
+    if (this.humanPlayer) {
+      this.camera.position.x = this.humanPlayer.mesh.position.x;
+      this.camera.position.y = 25;
+      this.camera.position.z = 50;
+      this.camera.lookAt(
+        this.humanPlayer.mesh.position.x,
+        0,
+        this.humanPlayer.mesh.position.z
+      );
+    }
 
     // Animate crowd
     this.scene.traverse((child) => {
@@ -1992,8 +2790,17 @@ class SoccerGame {
       }
     }
 
-    // Update lastKeys for next frame
-    Object.assign(this.lastKeys, this.keys);
+    // Update last key states
+    this.lastKeys.ArrowUp = this.keys.ArrowUp;
+    this.lastKeys.ArrowDown = this.keys.ArrowDown;
+    this.lastKeys.ArrowLeft = this.keys.ArrowLeft;
+    this.lastKeys.ArrowRight = this.keys.ArrowRight;
+    this.lastKeys.Space = this.keys.Space;
+    this.lastKeys.t = this.keys.t;
+    this.lastKeys.z = this.keys.z;
+    this.lastKeys.d = this.keys.d;
+
+    // Celebration animation
   }
 
   /**
@@ -2012,6 +2819,474 @@ class SoccerGame {
     this.update(deltaTime);
     this.renderer.render(this.scene, this.camera);
   };
+
+  /**
+   * Update referees
+   */
+  private updateReferees(deltaTime: number): void {
+    // Update foul cooldown
+    if (this.foulCooldown > 0) {
+      this.foulCooldown -= deltaTime;
+    }
+
+    // Update card showing animation
+    if (this.showingCard) {
+      this.cardShowTime += deltaTime;
+      if (this.cardShowTime > 3) {
+        this.showingCard = false;
+        this.cardShowTime = 0;
+        if (this.cardDisplay) {
+          this.cardDisplay.visible = false;
+          const yellowCard = this.cardDisplay.getObjectByName("yellowCard");
+          const redCard = this.cardDisplay.getObjectByName("redCard");
+          if (yellowCard) yellowCard.visible = false;
+          if (redCard) redCard.visible = false;
+        }
+      }
+    }
+
+    // Main referee follows the ball
+    const mainRef = this.referees.find((r) => r.type === RefereeType.MAIN);
+    if (mainRef) {
+      // Stay 10-15 units away from ball
+      const idealDistance = 12;
+      const direction = new THREE.Vector3();
+      direction.subVectors(mainRef.position, this.ball.position);
+      direction.y = 0;
+      direction.normalize();
+
+      const targetPos = this.ball.position.clone();
+      targetPos.add(direction.multiplyScalar(idealDistance));
+
+      // Move towards target
+      const refSpeed = 10 * deltaTime;
+      const moveDir = new THREE.Vector3();
+      moveDir.subVectors(targetPos, mainRef.mesh.position);
+      moveDir.y = 0;
+
+      if (moveDir.length() > 0.5) {
+        moveDir.normalize();
+        mainRef.mesh.position.x += moveDir.x * refSpeed;
+        mainRef.mesh.position.z += moveDir.z * refSpeed;
+
+        // Face the ball
+        mainRef.mesh.lookAt(
+          this.ball.position.x,
+          mainRef.mesh.position.y,
+          this.ball.position.z
+        );
+      }
+    }
+
+    // Assistant referees stay on sidelines
+    const assistant1 = this.referees.find(
+      (r) => r.type === RefereeType.ASSISTANT_1
+    );
+    if (assistant1) {
+      assistant1.mesh.position.x = Math.max(
+        -50,
+        Math.min(0, this.ball.position.x)
+      );
+      assistant1.mesh.position.z = -40;
+    }
+
+    const assistant2 = this.referees.find(
+      (r) => r.type === RefereeType.ASSISTANT_2
+    );
+    if (assistant2) {
+      assistant2.mesh.position.x = Math.max(
+        0,
+        Math.min(50, this.ball.position.x)
+      );
+      assistant2.mesh.position.z = 40;
+    }
+  }
+
+  /**
+   * Check for fouls
+   */
+  private checkForFouls(): void {
+    if (this.foulCooldown > 0 || this.showingCard) return;
+
+    // Check collisions between players
+    for (let i = 0; i < this.players.length; i++) {
+      const player1 = this.players[i];
+      if (player1.redCard) continue;
+
+      for (let j = i + 1; j < this.players.length; j++) {
+        const player2 = this.players[j];
+        if (player2.redCard) continue;
+
+        // Skip if same team
+        if (player1.team === player2.team) continue;
+
+        const distance = player1.mesh.position.distanceTo(
+          player2.mesh.position
+        );
+
+        // Check for collision
+        if (distance < 1.5) {
+          // Determine if it's a foul based on various factors
+          const ballDistance1 = player1.mesh.position.distanceTo(
+            this.ball.position
+          );
+          const ballDistance2 = player2.mesh.position.distanceTo(
+            this.ball.position
+          );
+
+          // Player closer to ball is more likely the victim
+          const offender = ballDistance1 > ballDistance2 ? player1 : player2;
+          const victim = ballDistance1 > ballDistance2 ? player2 : player1;
+
+          // Random chance of foul (based on difficulty)
+          const foulChance =
+            this.difficulty === Difficulty.EASY
+              ? 0.01
+              : this.difficulty === Difficulty.MEDIUM
+              ? 0.02
+              : 0.03;
+
+          if (Math.random() < foulChance) {
+            // Determine severity
+            const severity = Math.random();
+
+            this.commitFoul(offender, victim, severity);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Handle a foul
+   */
+  private commitFoul(offender: Player, victim: Player, severity: number): void {
+    this.foulCooldown = 5; // 5 second cooldown between fouls
+
+    // Stop the game briefly
+    this.ballVelocity.set(0, 0, 0);
+    this.ball.position.y = 0.5;
+
+    // Position ball at foul location
+    const foulPos = victim.mesh.position.clone();
+    this.ball.position.x = foulPos.x;
+    this.ball.position.z = foulPos.z;
+
+    // Show card
+    const isYellow = severity < 0.8 || offender.yellowCards === 0;
+    const isRed = !isYellow || offender.yellowCards >= 1;
+
+    this.showCard(offender, isRed ? CardType.RED : CardType.YELLOW, foulPos);
+
+    // Update player's card count
+    if (isRed) {
+      offender.redCard = true;
+      // Remove player from field
+      this.scene.remove(offender.mesh);
+    } else {
+      offender.yellowCards++;
+      if (offender.yellowCards >= 2) {
+        offender.redCard = true;
+        // Two yellows = red
+        setTimeout(() => {
+          this.showCard(offender, CardType.RED, foulPos);
+          this.scene.remove(offender.mesh);
+        }, 1500);
+      }
+    }
+
+    // Play whistle sound
+    this.playWhistleSound();
+  }
+
+  /**
+   * Show a card
+   */
+  private showCard(
+    player: Player,
+    cardType: CardType,
+    position: THREE.Vector3
+  ): void {
+    if (!this.cardDisplay) return;
+
+    this.showingCard = true;
+    this.cardShowTime = 0;
+
+    // Position card above referee
+    const mainRef = this.referees.find((r) => r.type === RefereeType.MAIN);
+    if (mainRef) {
+      this.cardDisplay.position.copy(mainRef.mesh.position);
+      this.cardDisplay.position.y = 4;
+
+      // Show appropriate card
+      const yellowCard = this.cardDisplay.getObjectByName("yellowCard");
+      const redCard = this.cardDisplay.getObjectByName("redCard");
+
+      if (cardType === CardType.YELLOW && yellowCard) {
+        yellowCard.visible = true;
+        this.cardDisplay.visible = true;
+      } else if (cardType === CardType.RED && redCard) {
+        redCard.visible = true;
+        this.cardDisplay.visible = true;
+      }
+
+      // Face camera
+      this.cardDisplay.lookAt(this.camera.position);
+    }
+
+    console.log(
+      `${cardType.toUpperCase()} CARD: ${player.team} #${player.number}`
+    );
+  }
+
+  /**
+   * Play whistle sound
+   */
+  private playWhistleSound(): void {
+    if (!this.audioContext) return;
+
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.connect(gain);
+    gain.connect(this.audioContext.destination);
+
+    osc.frequency.setValueAtTime(2000, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(
+      1000,
+      this.audioContext.currentTime + 0.1
+    );
+
+    gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.01,
+      this.audioContext.currentTime + 0.3
+    );
+
+    osc.start(this.audioContext.currentTime);
+    osc.stop(this.audioContext.currentTime + 0.3);
+  }
+
+  /**
+   * Pass the ball to a player in front
+   */
+  private passBall(passer: Player): void {
+    // Find the closest teammate in front of the player
+    let closestTeammate: Player | null = null;
+    let closestDistance = Infinity;
+
+    // Get passer's forward direction
+    const forwardDir = new THREE.Vector3(
+      -Math.sin(passer.mesh.rotation.y),
+      0,
+      -Math.cos(passer.mesh.rotation.y)
+    );
+
+    this.players.forEach((player) => {
+      if (player === passer || player.team !== passer.team || player.redCard)
+        return;
+
+      // Get direction to teammate
+      const toTeammate = new THREE.Vector3();
+      toTeammate.subVectors(player.mesh.position, passer.mesh.position);
+      toTeammate.y = 0;
+
+      const distance = toTeammate.length();
+      toTeammate.normalize();
+
+      // Check if teammate is in front (dot product > 0.5 means within ~60 degrees)
+      const dot = forwardDir.dot(toTeammate);
+
+      if (dot > 0.5 && distance < 30 && distance < closestDistance) {
+        closestDistance = distance;
+        closestTeammate = player;
+      }
+    });
+
+    if (closestTeammate) {
+      // Pass to the teammate
+      const passDirection = new THREE.Vector3();
+      passDirection.subVectors(
+        closestTeammate!.mesh.position,
+        this.ball.position
+      );
+      passDirection.y = 0;
+      passDirection.normalize();
+
+      const passPower = Math.min(closestDistance * 1.5, 20);
+      this.ballVelocity.x = passDirection.x * passPower;
+      this.ballVelocity.z = passDirection.z * passPower;
+      this.ballVelocity.y = 2; // Small lift
+
+      this.isDribbling = false;
+      this.dribblingPlayer = null;
+
+      console.log(
+        `Pass from ${passer.team} #${passer.number} to #${
+          closestTeammate!.number
+        }`
+      );
+    }
+  }
+
+  /**
+   * Perform a slide tackle
+   */
+  private slideTackle(tackler: Player): void {
+    if (tackler.isTackling || tackler.isFalling) return;
+
+    tackler.isTackling = true;
+    tackler.tackleTime = 0;
+
+    // Lunge forward
+    const tackleSpeed = 15;
+    const tackleDir = new THREE.Vector3(
+      -Math.sin(tackler.mesh.rotation.y),
+      0,
+      -Math.cos(tackler.mesh.rotation.y)
+    );
+
+    tackler.velocity.x = tackleDir.x * tackleSpeed;
+    tackler.velocity.z = tackleDir.z * tackleSpeed;
+
+    // Rotate player to horizontal position (slide animation)
+    if (tackler.mesh.userData && tackler.mesh.userData.bones) {
+      // Lean back
+      tackler.mesh.rotation.x = -Math.PI / 4;
+    }
+  }
+
+  /**
+   * Update tackle mechanics
+   */
+  private updateTackles(deltaTime: number): void {
+    this.players.forEach((player) => {
+      // Update sliding tackle
+      if (player.isTackling) {
+        player.tackleTime = (player.tackleTime || 0) + deltaTime;
+
+        // Slide for 0.5 seconds
+        if (player.tackleTime < 0.5) {
+          // Apply sliding velocity with friction
+          player.mesh.position.x += player.velocity.x * deltaTime;
+          player.mesh.position.z += player.velocity.z * deltaTime;
+          player.velocity.x *= 0.9;
+          player.velocity.z *= 0.9;
+
+          // Check for ball contact during tackle
+          const ballDistance = player.mesh.position.distanceTo(
+            this.ball.position
+          );
+          if (
+            ballDistance < 2 &&
+            this.dribblingPlayer &&
+            this.dribblingPlayer.team !== player.team
+          ) {
+            // Successful tackle - knock the ball away
+            const knockDir = new THREE.Vector3();
+            knockDir.subVectors(this.ball.position, player.mesh.position);
+            knockDir.y = 0;
+            knockDir.normalize();
+
+            this.ballVelocity.x = knockDir.x * 15;
+            this.ballVelocity.z = knockDir.z * 15;
+            this.ballVelocity.y = 5;
+
+            // Make the victim fall
+            if (this.dribblingPlayer) {
+              this.dribblingPlayer.isFalling = true;
+              this.dribblingPlayer.fallTime = 0;
+            }
+
+            this.dribblingPlayer = null;
+            this.isDribbling = false;
+          }
+        } else {
+          // End tackle
+          player.isTackling = false;
+          player.mesh.rotation.x = 0;
+          player.velocity.x = 0;
+          player.velocity.z = 0;
+        }
+      }
+
+      // Update falling
+      if (player.isFalling) {
+        player.fallTime = (player.fallTime || 0) + deltaTime;
+
+        if (player.fallTime < 0.3) {
+          // Fall animation
+          player.mesh.rotation.x = (-Math.PI / 3) * (player.fallTime / 0.3);
+          player.isOnGround = false;
+        } else if (player.fallTime < 1.5) {
+          // Stay on ground
+          player.mesh.rotation.x = -Math.PI / 3;
+          player.isOnGround = true;
+        } else {
+          // Get up
+          player.mesh.rotation.x = 0;
+          player.isFalling = false;
+          player.isOnGround = false;
+        }
+      }
+    });
+  }
+
+  /**
+   * Check for running tackles (collision-based tackles)
+   */
+  private checkRunningTackles(): void {
+    // Check each player against the ball carrier
+    if (!this.dribblingPlayer) return;
+
+    const ballCarrier = this.dribblingPlayer; // Store reference to avoid null checks
+
+    this.players.forEach((player) => {
+      if (
+        player === ballCarrier ||
+        player.team === ballCarrier.team ||
+        player.redCard ||
+        player.isFalling ||
+        player.isTackling
+      )
+        return;
+
+      const distance = player.mesh.position.distanceTo(
+        ballCarrier.mesh.position
+      );
+
+      // Running tackle distance
+      if (distance < 1.8) {
+        // Calculate relative speed
+        const relativeSpeed = player.velocity
+          .clone()
+          .sub(ballCarrier.velocity)
+          .length();
+
+        // Higher speed = more likely to succeed
+        if (relativeSpeed > 2 || Math.random() < 0.3) {
+          // Successful tackle
+          const knockDir = new THREE.Vector3();
+          knockDir.randomDirection();
+          knockDir.y = 0;
+          knockDir.normalize();
+
+          this.ballVelocity.x = knockDir.x * 10;
+          this.ballVelocity.z = knockDir.z * 10;
+          this.ballVelocity.y = 3;
+
+          // Victim falls
+          ballCarrier.isFalling = true;
+          ballCarrier.fallTime = 0;
+
+          this.dribblingPlayer = null;
+          this.isDribbling = false;
+
+          console.log(`Running tackle by ${player.team} #${player.number}`);
+        }
+      }
+    });
+  }
 }
 
 // Start the game when the page loads
