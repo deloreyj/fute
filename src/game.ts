@@ -90,6 +90,8 @@ interface Player {
   isDiving?: boolean;
   diveTime?: number;
   holdTime?: number;
+  /** Prevent immediate recapture after releasing the ball */
+  releaseCooldown?: number;
 }
 
 /**
@@ -432,6 +434,7 @@ class SoccerGame {
         isDiving: false,
         diveTime: 0,
         holdTime: 0,
+        releaseCooldown: 0,
       };
 
       // Position for walkout (in tunnel)
@@ -463,6 +466,7 @@ class SoccerGame {
         isDiving: false,
         diveTime: 0,
         holdTime: 0,
+        releaseCooldown: 0,
       };
 
       // Position for walkout (in tunnel)
@@ -2403,6 +2407,9 @@ class SoccerGame {
   private updateGoalkeepers(deltaTime: number): void {
     const fieldLength = 115;
     this.goalkeepers.forEach((keeper) => {
+      if (keeper.releaseCooldown && keeper.releaseCooldown > 0) {
+        keeper.releaseCooldown -= deltaTime;
+      }
       const goalX =
         keeper.team === TeamType.SPORTING
           ? -fieldLength / 2 + 3
@@ -2453,12 +2460,17 @@ class SoccerGame {
         this.ballVelocity.set(0, 0, 0);
         if (keeper.holdTime! > 1) {
           keeper.hasBall = false;
+          keeper.releaseCooldown = 0.5;
           this.rollBallToTeammate(keeper);
           this.dribblingPlayer = null;
         }
       } else {
         const dist = keeper.mesh.position.distanceTo(this.ball.position);
-        if (dist < 1.5 && this.ball.position.y < 2) {
+        if (
+          dist < 1.5 &&
+          this.ball.position.y < 2 &&
+          (keeper.releaseCooldown ?? 0) <= 0
+        ) {
           keeper.hasBall = true;
           keeper.holdTime = 0;
           this.dribblingPlayer = keeper;
