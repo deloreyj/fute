@@ -2310,6 +2310,13 @@ class SoccerGame {
       if (distance < 2.5) {
         this.passBall(this.humanPlayer);
         this.playKickSound();
+      } else if (
+        this.dribblingPlayer &&
+        !this.dribblingPlayer.isHuman &&
+        this.dribblingPlayer.team === this.humanPlayer.team
+      ) {
+        this.passBallToPlayer(this.dribblingPlayer, this.humanPlayer);
+        this.playKickSound();
       }
     }
 
@@ -3123,6 +3130,31 @@ class SoccerGame {
         }`
       );
     }
+  }
+
+  /**
+   * Pass the ball from one player directly to a target player
+   */
+  private passBallToPlayer(passer: Player, receiver: Player): void {
+    const passDirection = new THREE.Vector3();
+    passDirection.subVectors(receiver.mesh.position, this.ball.position);
+    passDirection.y = 0;
+
+    const distance = passDirection.length();
+    passDirection.normalize();
+
+    const passPower = Math.min(distance * 1.5, 20);
+
+    this.ballVelocity.x = passDirection.x * passPower;
+    this.ballVelocity.z = passDirection.z * passPower;
+    this.ballVelocity.y = 2;
+
+    this.isDribbling = false;
+    this.dribblingPlayer = null;
+
+    console.log(
+      `Pass from ${passer.team} #${passer.number} to human player`
+    );
   }
 
   /**
