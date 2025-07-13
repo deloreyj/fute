@@ -144,6 +144,7 @@ class SoccerGame {
 
   // UI elements
   private menuContainer: HTMLDivElement | null = null;
+  private touchControlsContainer: HTMLDivElement | null = null;
 
   // Movement state
   private keys = {
@@ -390,6 +391,9 @@ class SoccerGame {
 
     // Show game canvas
     this.renderer.domElement.style.opacity = "1";
+    if (this.touchControlsContainer) {
+      this.touchControlsContainer.style.display = "block";
+    }
 
     // Create teams
     this.createTeams();
@@ -1708,7 +1712,9 @@ class SoccerGame {
     controlsContainer.style.height = "auto";
     controlsContainer.style.pointerEvents = "none";
     controlsContainer.style.zIndex = "1000";
+    controlsContainer.style.display = "none"; // Hidden until difficulty is selected
     document.body.appendChild(controlsContainer);
+    this.touchControlsContainer = controlsContainer;
 
     // Create d-pad container
     const dpadContainer = document.createElement("div");
