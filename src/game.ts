@@ -48,13 +48,6 @@ enum Position {
   RW = "RW", // Right Winger
 }
 
-/**
- * Card types
- */
-enum CardType {
-  YELLOW = "yellow",
-  RED = "red",
-}
 
 /**
  * Referee types
@@ -77,8 +70,7 @@ interface Player {
   velocity: THREE.Vector3;
   targetPosition?: THREE.Vector3;
   hasBall?: boolean;
-  yellowCards: number;
-  redCard: boolean;
+  
   lastFoulTime?: number;
   isTackling?: boolean;
   tackleTime?: number;
@@ -136,14 +128,12 @@ class SoccerGame {
 
   // Referees
   private referees: Referee[] = [];
-  private cardDisplay: THREE.Group | null = null;
   private foulCooldown: number = 0;
   private lastFoul: Foul | null = null;
-  private showingCard: boolean = false;
-  private cardShowTime: number = 0;
 
   // UI elements
   private menuContainer: HTMLDivElement | null = null;
+  private touchControlsContainer: HTMLDivElement | null = null;
 
   // Movement state
   private keys = {
@@ -395,6 +385,9 @@ class SoccerGame {
 
     // Show game canvas
     this.renderer.domElement.style.opacity = "1";
+    if (this.touchControlsContainer) {
+      this.touchControlsContainer.style.display = "block";
+    }
 
     // Create teams
     this.createTeams();
@@ -402,8 +395,6 @@ class SoccerGame {
     // Create referees
     this.createReferees();
 
-    // Create card display
-    this.createCardDisplay();
 
     // Reset match timing
     this.currentHalf = 1;
@@ -468,8 +459,6 @@ class SoccerGame {
         number: info.num,
         isHuman: index === 9, // Make the striker the human player
         velocity: new THREE.Vector3(),
-        yellowCards: 0,
-        redCard: false,
         isDiving: false,
         diveTime: 0,
         holdTime: 0,
@@ -500,8 +489,6 @@ class SoccerGame {
         number: info.num,
         isHuman: false,
         velocity: new THREE.Vector3(),
-        yellowCards: 0,
-        redCard: false,
         isDiving: false,
         diveTime: 0,
         holdTime: 0,
@@ -631,40 +618,7 @@ class SoccerGame {
     return refGroup as unknown as THREE.Mesh;
   }
 
-  /**
-   * Create card display
-   */
-  private createCardDisplay(): void {
-    this.cardDisplay = new THREE.Group();
 
-    // Yellow card
-    const yellowCardGeometry = new THREE.PlaneGeometry(0.6, 0.9);
-    const yellowCardMaterial = new THREE.MeshPhongMaterial({
-      color: 0xffff00,
-      side: THREE.DoubleSide,
-      emissive: 0xffff00,
-      emissiveIntensity: 0.3,
-    });
-    const yellowCard = new THREE.Mesh(yellowCardGeometry, yellowCardMaterial);
-    yellowCard.name = "yellowCard";
-    yellowCard.visible = false;
-    this.cardDisplay.add(yellowCard);
-
-    // Red card
-    const redCardGeometry = new THREE.PlaneGeometry(0.6, 0.9);
-    const redCardMaterial = new THREE.MeshPhongMaterial({
-      color: 0xff0000,
-      side: THREE.DoubleSide,
-      emissive: 0xff0000,
-      emissiveIntensity: 0.3,
-    });
-    const redCard = new THREE.Mesh(redCardGeometry, redCardMaterial);
-    redCard.name = "redCard";
-    redCard.visible = false;
-    this.cardDisplay.add(redCard);
-
-    this.scene.add(this.cardDisplay);
-  }
 
   /**
    * Set up lighting for the scene
@@ -1713,7 +1667,9 @@ class SoccerGame {
     controlsContainer.style.height = "auto";
     controlsContainer.style.pointerEvents = "none";
     controlsContainer.style.zIndex = "1000";
+    controlsContainer.style.display = "none"; // Hidden until difficulty is selected
     document.body.appendChild(controlsContainer);
+    this.touchControlsContainer = controlsContainer;
 
     // Create d-pad container
     const dpadContainer = document.createElement("div");
@@ -2375,6 +2331,13 @@ class SoccerGame {
           this.freeKickPlayer = null;
           this.freeKickTimer = 0;
         }
+      } else if (
+        this.dribblingPlayer &&
+        !this.dribblingPlayer.isHuman &&
+        this.dribblingPlayer.team === this.humanPlayer.team
+      ) {
+        this.passBallToPlayer(this.dribblingPlayer, this.humanPlayer);
+        this.playKickSound();
       }
     }
 
@@ -2392,7 +2355,7 @@ class SoccerGame {
    */
   private updateAIPlayers(deltaTime: number): void {
     this.players.forEach((player) => {
-      if (player.isHuman || player.redCard || player.position === Position.GK) return;
+      if (player.isHuman || player.position === Position.GK) return;
 
       // Freeze non-takers during a free kick
       if (this.freeKickActive && player !== this.freeKickPlayer) {
@@ -2485,6 +2448,9 @@ class SoccerGame {
           this.resetPlayerAnimation(player);
         }
       }
+
+      // Handle dribbling logic for AI players
+      this.updateDribbling(player, deltaTime);
     });
   }
 
@@ -2586,6 +2552,13 @@ class SoccerGame {
       this.dribblingPlayer = player;
       this.dribbleOffset.subVectors(this.ball.position, player.mesh.position);
       this.dribbleOffset.y = 0;
+
+      // Ensure AI players face the opponent goal when gaining control
+      if (!player.isHuman) {
+        const goalDir =
+          player.team === TeamType.SPORTING ? -Math.PI / 2 : Math.PI / 2;
+        player.mesh.rotation.y = goalDir;
+      }
     }
 
     // Continue dribbling
@@ -3013,21 +2986,6 @@ class SoccerGame {
       this.foulCooldown -= deltaTime;
     }
 
-    // Update card showing animation
-    if (this.showingCard) {
-      this.cardShowTime += deltaTime;
-      if (this.cardShowTime > 3) {
-        this.showingCard = false;
-        this.cardShowTime = 0;
-        if (this.cardDisplay) {
-          this.cardDisplay.visible = false;
-          const yellowCard = this.cardDisplay.getObjectByName("yellowCard");
-          const redCard = this.cardDisplay.getObjectByName("redCard");
-          if (yellowCard) yellowCard.visible = false;
-          if (redCard) redCard.visible = false;
-        }
-      }
-    }
 
     // Main referee follows the ball
     const mainRef = this.referees.find((r) => r.type === RefereeType.MAIN);
@@ -3093,16 +3051,10 @@ class SoccerGame {
     if (this.foulCooldown > 0 || this.showingCard || this.freeKickActive) return;
 
     this.players.forEach((offender) => {
-      if (!offender.isTackling || offender.tackleTouchedBall || offender.redCard)
-        return;
+      if (!offender.isTackling || offender.tackleTouchedBall) return;
 
       this.players.forEach((victim) => {
-        if (
-          victim === offender ||
-          victim.team === offender.team ||
-          victim.redCard
-        )
-          return;
+        if (victim === offender || victim.team === offender.team) return;
 
         const distance = offender.mesh.position.distanceTo(victim.mesh.position);
         if (distance < 1.2 && this.dribblingPlayer === victim) {
@@ -3127,28 +3079,7 @@ class SoccerGame {
     this.ball.position.x = foulPos.x;
     this.ball.position.z = foulPos.z;
 
-    // Show card
-    const isYellow = severity < 0.8 || offender.yellowCards === 0;
-    const isRed = !isYellow || offender.yellowCards >= 1;
-
-    this.showCard(offender, isRed ? CardType.RED : CardType.YELLOW, foulPos);
-
-    // Update player's card count
-    if (isRed) {
-      offender.redCard = true;
-      // Remove player from field
-      this.scene.remove(offender.mesh);
-    } else {
-      offender.yellowCards++;
-      if (offender.yellowCards >= 2) {
-        offender.redCard = true;
-        // Two yellows = red
-        setTimeout(() => {
-          this.showCard(offender, CardType.RED, foulPos);
-          this.scene.remove(offender.mesh);
-        }, 1500);
-      }
-    }
+    // Card handling removed
 
     // Play whistle sound
     this.playWhistleSound();
@@ -3161,45 +3092,7 @@ class SoccerGame {
     this.dribblingPlayer = null;
   }
 
-  /**
-   * Show a card
-   */
-  private showCard(
-    player: Player,
-    cardType: CardType,
-    position: THREE.Vector3
-  ): void {
-    if (!this.cardDisplay) return;
 
-    this.showingCard = true;
-    this.cardShowTime = 0;
-
-    // Position card above referee
-    const mainRef = this.referees.find((r) => r.type === RefereeType.MAIN);
-    if (mainRef) {
-      this.cardDisplay.position.copy(mainRef.mesh.position);
-      this.cardDisplay.position.y = 4;
-
-      // Show appropriate card
-      const yellowCard = this.cardDisplay.getObjectByName("yellowCard");
-      const redCard = this.cardDisplay.getObjectByName("redCard");
-
-      if (cardType === CardType.YELLOW && yellowCard) {
-        yellowCard.visible = true;
-        this.cardDisplay.visible = true;
-      } else if (cardType === CardType.RED && redCard) {
-        redCard.visible = true;
-        this.cardDisplay.visible = true;
-      }
-
-      // Face camera
-      this.cardDisplay.lookAt(this.camera.position);
-    }
-
-    console.log(
-      `${cardType.toUpperCase()} CARD: ${player.team} #${player.number}`
-    );
-  }
 
   /**
    * Play whistle sound
@@ -3245,8 +3138,7 @@ class SoccerGame {
     );
 
     this.players.forEach((player) => {
-      if (player === passer || player.team !== passer.team || player.redCard)
-        return;
+      if (player === passer || player.team !== passer.team) return;
 
       // Get direction to teammate
       const toTeammate = new THREE.Vector3();
@@ -3292,6 +3184,31 @@ class SoccerGame {
   }
 
   /**
+   * Pass the ball from one player directly to a target player
+   */
+  private passBallToPlayer(passer: Player, receiver: Player): void {
+    const passDirection = new THREE.Vector3();
+    passDirection.subVectors(receiver.mesh.position, this.ball.position);
+    passDirection.y = 0;
+
+    const distance = passDirection.length();
+    passDirection.normalize();
+
+    const passPower = Math.min(distance * 1.5, 20);
+
+    this.ballVelocity.x = passDirection.x * passPower;
+    this.ballVelocity.z = passDirection.z * passPower;
+    this.ballVelocity.y = 2;
+
+    this.isDribbling = false;
+    this.dribblingPlayer = null;
+
+    console.log(
+      `Pass from ${passer.team} #${passer.number} to human player`
+    );
+  }
+
+  /**
    * Roll the ball to the nearest teammate
    */
   private rollBallToTeammate(keeper: Player): void {
@@ -3302,7 +3219,6 @@ class SoccerGame {
       if (
         player === keeper ||
         player.team !== keeper.team ||
-        player.redCard ||
         player.position === Position.GK
       )
         return;
@@ -3456,7 +3372,6 @@ class SoccerGame {
       if (
         player === ballCarrier ||
         player.team === ballCarrier.team ||
-        player.redCard ||
         player.isFalling ||
         player.isTackling
       )
