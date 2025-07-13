@@ -113,6 +113,7 @@ class SoccerGame {
 
     // Set up controls
     this.setupControls();
+    this.setupTouchControls(); // Add this line
 
     // Handle window resize
     window.addEventListener("resize", () => this.onWindowResize());
@@ -120,6 +121,9 @@ class SoccerGame {
     // Initialize audio on first user interaction
     window.addEventListener("click", () => this.initAudio(), { once: true });
     window.addEventListener("keydown", () => this.initAudio(), { once: true });
+    window.addEventListener("touchstart", () => this.initAudio(), {
+      once: true,
+    });
 
     // Start game loop
     this.animate();
@@ -1121,6 +1125,150 @@ class SoccerGame {
         this.keys[key as keyof typeof this.keys] = false;
       }
     });
+  }
+
+  /**
+   * Set up touch controls for mobile devices
+   */
+  private setupTouchControls(): void {
+    // Check if device supports touch
+    if (!("ontouchstart" in window) && !navigator.maxTouchPoints) {
+      return;
+    }
+
+    // Create controls container
+    const controlsContainer = document.createElement("div");
+    controlsContainer.style.position = "fixed";
+    controlsContainer.style.bottom = "0";
+    controlsContainer.style.left = "0";
+    controlsContainer.style.width = "100%";
+    controlsContainer.style.height = "auto";
+    controlsContainer.style.pointerEvents = "none";
+    controlsContainer.style.zIndex = "1000";
+    document.body.appendChild(controlsContainer);
+
+    // Create d-pad container
+    const dpadContainer = document.createElement("div");
+    dpadContainer.style.position = "absolute";
+    dpadContainer.style.bottom = "20px";
+    dpadContainer.style.left = "20px";
+    dpadContainer.style.width = "150px";
+    dpadContainer.style.height = "150px";
+    dpadContainer.style.pointerEvents = "auto";
+    controlsContainer.appendChild(dpadContainer);
+
+    // Create arrow buttons
+    const createArrowButton = (
+      direction: "up" | "down" | "left" | "right",
+      x: string,
+      y: string,
+      rotation: number
+    ) => {
+      const button = document.createElement("button");
+      button.style.position = "absolute";
+      button.style.left = x;
+      button.style.top = y;
+      button.style.width = "50px";
+      button.style.height = "50px";
+      button.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      button.style.border = "2px solid rgba(255, 255, 255, 0.5)";
+      button.style.borderRadius = "8px";
+      button.style.cursor = "pointer";
+      button.style.transform = `rotate(${rotation}deg)`;
+      button.style.display = "flex";
+      button.style.alignItems = "center";
+      button.style.justifyContent = "center";
+      button.style.fontSize = "24px";
+      button.style.color = "rgba(255, 255, 255, 0.8)";
+      button.style.userSelect = "none";
+      button.style.webkitUserSelect = "none";
+      button.style.touchAction = "none";
+      button.innerHTML = "▲";
+
+      // Map direction to key
+      const keyMap = {
+        up: "ArrowUp",
+        down: "ArrowDown",
+        left: "ArrowLeft",
+        right: "ArrowRight",
+      };
+
+      const key = keyMap[direction] as keyof typeof this.keys;
+
+      // Touch events
+      button.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        this.keys[key] = true;
+        button.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+      });
+
+      button.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        this.keys[key] = false;
+        button.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      });
+
+      button.addEventListener("touchcancel", (e) => {
+        e.preventDefault();
+        this.keys[key] = false;
+        button.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      });
+
+      return button;
+    };
+
+    // Add arrow buttons
+    dpadContainer.appendChild(createArrowButton("up", "50px", "0px", 0));
+    dpadContainer.appendChild(createArrowButton("down", "50px", "100px", 180));
+    dpadContainer.appendChild(createArrowButton("left", "0px", "50px", -90));
+    dpadContainer.appendChild(createArrowButton("right", "100px", "50px", 90));
+
+    // Create shoot button
+    const shootButton = document.createElement("button");
+    shootButton.style.position = "absolute";
+    shootButton.style.bottom = "40px";
+    shootButton.style.right = "40px";
+    shootButton.style.width = "80px";
+    shootButton.style.height = "80px";
+    shootButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+    shootButton.style.border = "2px solid rgba(255, 255, 255, 0.5)";
+    shootButton.style.borderRadius = "50%";
+    shootButton.style.cursor = "pointer";
+    shootButton.style.display = "flex";
+    shootButton.style.alignItems = "center";
+    shootButton.style.justifyContent = "center";
+    shootButton.style.fontSize = "18px";
+    shootButton.style.fontWeight = "bold";
+    shootButton.style.color = "rgba(255, 255, 255, 0.8)";
+    shootButton.style.userSelect = "none";
+    shootButton.style.webkitUserSelect = "none";
+    shootButton.style.touchAction = "none";
+    shootButton.style.pointerEvents = "auto";
+    shootButton.textContent = "SHOOT";
+
+    // Shoot button events
+    shootButton.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      this.keys.Space = true;
+      shootButton.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+      shootButton.style.transform = "scale(0.95)";
+    });
+
+    shootButton.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      this.keys.Space = false;
+      shootButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      shootButton.style.transform = "scale(1)";
+    });
+
+    shootButton.addEventListener("touchcancel", (e) => {
+      e.preventDefault();
+      this.keys.Space = false;
+      shootButton.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+      shootButton.style.transform = "scale(1)";
+    });
+
+    controlsContainer.appendChild(shootButton);
   }
 
   /**
