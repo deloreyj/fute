@@ -8,6 +8,12 @@ enum TeamType {
   BENFICA = "benfica",
 }
 
+/** Player role for kit variations */
+enum PlayerRole {
+  FIELD = "field",
+  GOALKEEPER = "goalkeeper",
+}
+
 /**
  * Main game class for the soccer game
  */
@@ -21,6 +27,7 @@ class SoccerGame {
   private ball: THREE.Mesh;
   private goals: THREE.Mesh[] = [];
   private confettiParticles: THREE.Points[] = [];
+  private goalkeepers: THREE.Mesh[] = [];
 
   // Movement state
   private keys = {
@@ -110,6 +117,7 @@ class SoccerGame {
     this.createStadium();
     this.player = this.createPlayer(TeamType.SPORTING);
     this.ball = this.createBall();
+    this.createGoalkeepers();
 
     // Set up controls
     this.setupControls();
@@ -851,7 +859,7 @@ class SoccerGame {
   /**
    * Create the player model (low-poly style)
    */
-  private createPlayer(teamType: TeamType): THREE.Mesh {
+  private createPlayer(teamType: TeamType, role: PlayerRole = PlayerRole.FIELD): THREE.Mesh {
     const playerGroup = new THREE.Group();
 
     // Field dimensions for positioning
@@ -868,14 +876,28 @@ class SoccerGame {
     let sockPrimaryColor: number;
     let sockSecondaryColor: number;
 
-    if (teamType === TeamType.SPORTING) {
-      // Sporting CP colors
+    if (role === PlayerRole.GOALKEEPER) {
+      if (teamType === TeamType.SPORTING) {
+        // Sporting goalkeeper kit - yellow
+        shirtColors = [0xffcc00];
+        shortsColor = 0xffcc00;
+        sockPrimaryColor = 0xffcc00;
+        sockSecondaryColor = 0x000000;
+      } else {
+        // Benfica goalkeeper kit - blue
+        shirtColors = [0x0066ff];
+        shortsColor = 0x0066ff;
+        sockPrimaryColor = 0x0066ff;
+        sockSecondaryColor = 0xffffff;
+      }
+    } else if (teamType === TeamType.SPORTING) {
+      // Sporting CP field player colors
       shirtColors = [0x007a33, 0xffffff]; // Green and white stripes
       shortsColor = 0x000000; // Black
       sockPrimaryColor = 0x007a33; // Green
       sockSecondaryColor = 0xffffff; // White
     } else {
-      // Benfica colors
+      // Benfica field player colors
       shirtColors = [0xd40000]; // Solid red
       shortsColor = 0xffffff; // White
       sockPrimaryColor = 0xd40000; // Red
@@ -909,8 +931,8 @@ class SoccerGame {
     // Torso (tapered cuboid - wider at shoulders)
     const torsoGroup = new THREE.Group();
 
-    if (teamType === TeamType.SPORTING) {
-      // Create horizontal stripes for Sporting
+    if (teamType === TeamType.SPORTING && role === PlayerRole.FIELD) {
+      // Create horizontal stripes for Sporting field players
       const stripeHeight = 0.125;
       const stripeCount = 8;
       for (let i = 0; i < stripeCount; i++) {
@@ -926,7 +948,7 @@ class SoccerGame {
         torsoGroup.add(stripe);
       }
     } else {
-      // Solid color shirt for Benfica
+      // Solid color shirt for Benfica players and all goalkeepers
       const torsoGeometry = new THREE.BoxGeometry(1.2, 1.0, 0.6);
       const torsoMaterial = new THREE.MeshLambertMaterial({
         color: shirtColors[0],
@@ -938,15 +960,17 @@ class SoccerGame {
       torso.receiveShadow = true;
       torsoGroup.add(torso);
 
-      // White collar/trim for Benfica
-      const collarGeometry = new THREE.BoxGeometry(1.21, 0.1, 0.61);
-      const collarMaterial = new THREE.MeshLambertMaterial({
-        color: 0xffffff,
-        flatShading: true,
-      });
-      const collar = new THREE.Mesh(collarGeometry, collarMaterial);
-      collar.position.y = 2.0;
-      torsoGroup.add(collar);
+      // White collar/trim for Benfica field players
+      if (teamType === TeamType.BENFICA && role === PlayerRole.FIELD) {
+        const collarGeometry = new THREE.BoxGeometry(1.21, 0.1, 0.61);
+        const collarMaterial = new THREE.MeshLambertMaterial({
+          color: 0xffffff,
+          flatShading: true,
+        });
+        const collar = new THREE.Mesh(collarGeometry, collarMaterial);
+        collar.position.y = 2.0;
+        torsoGroup.add(collar);
+      }
     }
 
     playerGroup.add(torsoGroup);
@@ -1106,6 +1130,21 @@ class SoccerGame {
     this.scene.add(ball);
 
     return ball;
+  }
+
+  /** Create goalkeepers at each end of the field */
+  private createGoalkeepers(): void {
+    const fieldLength = 115;
+
+    const homeKeeper = this.createPlayer(TeamType.SPORTING, PlayerRole.GOALKEEPER);
+    homeKeeper.position.set(-fieldLength / 2 + 3, 0.5, 0);
+    homeKeeper.rotation.y = -Math.PI / 2;
+    this.goalkeepers.push(homeKeeper);
+
+    const awayKeeper = this.createPlayer(TeamType.BENFICA, PlayerRole.GOALKEEPER);
+    awayKeeper.position.set(fieldLength / 2 - 3, 0.5, 0);
+    awayKeeper.rotation.y = Math.PI / 2;
+    this.goalkeepers.push(awayKeeper);
   }
 
   /**
@@ -1738,6 +1777,18 @@ class SoccerGame {
         this.ballVelocity.z *= 0.98;
       }
     }
+
+    // Basic collision with goalkeepers
+    this.goalkeepers.forEach((keeper) => {
+      const dist = keeper.position.distanceTo(this.ball.position);
+      if (dist < 1.5) {
+        const away = this.ball.position.clone().sub(keeper.position).setY(0).normalize();
+        this.ball.position.x = keeper.position.x + away.x * 1.5;
+        this.ball.position.z = keeper.position.z + away.z * 1.5;
+        this.ballVelocity.x = away.x * Math.abs(this.ballVelocity.x || 10);
+        this.ballVelocity.z = away.z * Math.abs(this.ballVelocity.z || 10);
+      }
+    });
 
     // Keep ball within field bounds (but allow entry into goal areas)
     if (Math.abs(this.ball.position.x) > fieldLength / 2 - 1) {
