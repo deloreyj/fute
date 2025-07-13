@@ -193,6 +193,16 @@ class SoccerGame {
   };
   private scoreboard: THREE.Group | null = null;
 
+  // Match timing
+  private halfDuration = 60; // seconds per half
+  private currentHalf = 1;
+  private gameClock = 0;
+  private timeDisplay: HTMLDivElement | null = null;
+
+  // Penalty shootout
+  private penaltyShootout = false;
+  private penaltyScores = { home: 0, away: 0, shots: 0 };
+
   constructor() {
     // Initialize Three.js scene
     this.scene = new THREE.Scene();
@@ -221,6 +231,11 @@ class SoccerGame {
     if (container) {
       container.appendChild(this.renderer.domElement);
     }
+
+    // Time display element
+    this.timeDisplay = document.getElementById(
+      "time-display"
+    ) as HTMLDivElement | null;
 
     // Initialize scene objects (but don't create players yet)
     this.setupLighting();
@@ -366,6 +381,13 @@ class SoccerGame {
 
     // Create card display
     this.createCardDisplay();
+
+    // Reset match timing
+    this.currentHalf = 1;
+    this.gameClock = 0;
+    this.penaltyShootout = false;
+    this.penaltyScores = { home: 0, away: 0, shots: 0 };
+    this.updateTimeDisplay();
 
     // Start walkout animation
     this.gameState = GameState.WALKOUT;
@@ -1051,6 +1073,19 @@ class SoccerGame {
     if (this.scoreboard) this.scoreboard.add(separator);
 
     this.createScoreDigits(this.scores.away, 4, 0, 0.6);
+  }
+
+  /** Update on-screen clock */
+  private updateTimeDisplay(): void {
+    if (!this.timeDisplay) return;
+    if (this.penaltyShootout) {
+      this.timeDisplay.textContent = `PENALTIES ${this.penaltyScores.home}-${this.penaltyScores.away}`;
+      return;
+    }
+    const remaining = Math.max(0, Math.floor(this.halfDuration - this.gameClock));
+    const minutes = Math.floor(remaining / 60);
+    const seconds = (remaining % 60).toString().padStart(2, "0");
+    this.timeDisplay.textContent = `H${this.currentHalf} ${minutes}:${seconds}`;
   }
 
   /**
@@ -2485,6 +2520,14 @@ class SoccerGame {
       return;
     }
 
+    if (!this.penaltyShootout) {
+      this.gameClock += deltaTime;
+      if (this.gameClock >= this.halfDuration) {
+        this.endHalf();
+      }
+      this.updateTimeDisplay();
+    }
+
     // Update human player
     if (this.humanPlayer) {
       this.updateHumanPlayer(deltaTime, moveSpeed);
@@ -3286,6 +3329,74 @@ class SoccerGame {
         }
       }
     });
+  }
+
+  /** End the current half or finish the match */
+  private endHalf(): void {
+    if (this.currentHalf === 1) {
+      this.currentHalf = 2;
+      this.gameClock = 0;
+      this.updateTimeDisplay();
+      // Reset ball to center
+      this.ball.position.set(0, 0.5, 0);
+      this.ballVelocity.set(0, 0, 0);
+    } else {
+      this.endMatch();
+    }
+  }
+
+  /** Determine match result */
+  private endMatch(): void {
+    if (this.scores.home === this.scores.away) {
+      this.startPenaltyShootout();
+    } else {
+      const winner =
+        this.scores.home > this.scores.away ? "Sporting" : "Benfica";
+      if (this.timeDisplay)
+        this.timeDisplay.textContent = `Full Time - ${winner} win!`;
+      this.gameState = GameState.MENU;
+    }
+  }
+
+  /** Start penalty shootout */
+  private startPenaltyShootout(): void {
+    this.penaltyShootout = true;
+    this.penaltyScores = { home: 0, away: 0, shots: 0 };
+    this.updateTimeDisplay();
+    this.takePenalty();
+  }
+
+  /** Simulate each penalty kick */
+  private takePenalty(): void {
+    if (!this.penaltyShootout) return;
+    const isHomeTurn = this.penaltyScores.shots % 2 === 0;
+    const scored = Math.random() < 0.7;
+    if (isHomeTurn && scored) this.penaltyScores.home++;
+    if (!isHomeTurn && scored) this.penaltyScores.away++;
+    this.penaltyScores.shots++;
+    this.updateTimeDisplay();
+
+    const shotsTakenEach = Math.ceil(this.penaltyScores.shots / 2);
+    if (
+      shotsTakenEach >= 5 &&
+      this.penaltyScores.home !== this.penaltyScores.away &&
+      this.penaltyScores.shots % 2 === 0
+    ) {
+      this.finishShootout();
+      return;
+    }
+
+    setTimeout(() => this.takePenalty(), 1000);
+  }
+
+  /** Finish penalty shootout */
+  private finishShootout(): void {
+    this.penaltyShootout = false;
+    const winner =
+      this.penaltyScores.home > this.penaltyScores.away ? "Sporting" : "Benfica";
+    if (this.timeDisplay)
+      this.timeDisplay.textContent = `${winner} win on penalties`;
+    this.gameState = GameState.MENU;
   }
 }
 
