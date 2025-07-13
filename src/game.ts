@@ -48,8 +48,22 @@ class SoccerGame {
   // Ball physics
   private ballVelocity = new THREE.Vector3();
 
+  // Dribbling state
+  private isDribbling = false;
+  private dribbleOffset = new THREE.Vector3();
+
   // Animation
   private animationTime = 0;
+  private lastTime = 0;
+
+  // Celebration state
+  private celebrationTime = 0;
+  private isCelebrating = false;
+  private celebrationEffects: THREE.Mesh[] = [];
+
+  // Audio
+  private audioContext: AudioContext | null = null;
+  private hornSounds: OscillatorNode[] = [];
 
   // Current team
   private currentTeam = TeamType.SPORTING;
@@ -64,7 +78,10 @@ class SoccerGame {
   constructor() {
     // Initialize Three.js scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb); // Sky blue
+    this.scene.background = new THREE.Color(0x1a1a2e); // Dark evening sky
+
+    // Add fog for atmosphere
+    this.scene.fog = new THREE.Fog(0x1a1a2e, 100, 250);
 
     // Set up camera
     this.camera = new THREE.PerspectiveCamera(
@@ -90,7 +107,7 @@ class SoccerGame {
     // Initialize game objects
     this.setupLighting();
     this.createField();
-    this.createScoreboard();
+    this.createStadium();
     this.player = this.createPlayer(TeamType.SPORTING);
     this.ball = this.createBall();
 
@@ -99,6 +116,10 @@ class SoccerGame {
 
     // Handle window resize
     window.addEventListener("resize", () => this.onWindowResize());
+
+    // Initialize audio on first user interaction
+    window.addEventListener("click", () => this.initAudio(), { once: true });
+    window.addEventListener("keydown", () => this.initAudio(), { once: true });
 
     // Start game loop
     this.animate();
@@ -109,20 +130,40 @@ class SoccerGame {
    */
   private setupLighting(): void {
     // Ambient light for overall illumination
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     this.scene.add(ambientLight);
 
-    // Directional light for shadows
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(20, 40, 20);
+    // Directional light for shadows (simulating stadium lights)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    directionalLight.position.set(30, 50, 30);
     directionalLight.castShadow = true;
-    directionalLight.shadow.camera.left = -60;
-    directionalLight.shadow.camera.right = 60;
-    directionalLight.shadow.camera.top = 80;
-    directionalLight.shadow.camera.bottom = -80;
+    directionalLight.shadow.camera.left = -100;
+    directionalLight.shadow.camera.right = 100;
+    directionalLight.shadow.camera.top = 100;
+    directionalLight.shadow.camera.bottom = -100;
     directionalLight.shadow.camera.near = 0.1;
-    directionalLight.shadow.camera.far = 150;
+    directionalLight.shadow.camera.far = 200;
+    directionalLight.shadow.mapSize.width = 1024; // Reduced from 2048
+    directionalLight.shadow.mapSize.height = 1024; // Reduced from 2048
     this.scene.add(directionalLight);
+
+    // Add stadium floodlights
+    const floodlightPositions = [
+      [-80, 30, -50], // Back left
+      [80, 30, -50], // Back right
+      [0, 30, -50], // Back center
+    ];
+
+    floodlightPositions.forEach((pos) => {
+      const spotLight = new THREE.SpotLight(0xffffff, 0.6); // Increased intensity slightly
+      spotLight.position.set(pos[0], pos[1], pos[2]);
+      spotLight.target.position.set(0, 0, 0);
+      spotLight.angle = Math.PI / 3;
+      spotLight.penumbra = 0.3;
+      spotLight.castShadow = true;
+      this.scene.add(spotLight);
+      this.scene.add(spotLight.target);
+    });
   }
 
   /**
@@ -315,45 +356,191 @@ class SoccerGame {
   }
 
   /**
-   * Create scoreboard at center of field
+   * Create stadium with seats and crowd
    */
-  private createScoreboard(): void {
-    this.scoreboard = new THREE.Group();
+  private createStadium(): void {
+    const fieldLength = 115;
+    const fieldWidth = 75;
 
-    // Scoreboard base (elevated platform)
-    const baseGeometry = new THREE.BoxGeometry(12, 0.5, 4);
-    const baseMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
-    const base = new THREE.Mesh(baseGeometry, baseMaterial);
-    base.position.set(0, 8, 0);
-    base.castShadow = true;
-    if (this.scoreboard) this.scoreboard.add(base);
+    // Stadium dimensions
+    const stadiumLength = fieldLength + 40;
+    const stadiumWidth = fieldWidth + 40;
+    const seatRows = 20;
+    const seatHeight = 0.8;
 
-    // Support poles
-    const poleGeometry = new THREE.CylinderGeometry(0.2, 0.2, 8);
-    const poleMaterial = new THREE.MeshLambertMaterial({ color: 0x666666 });
+    // Create stadium structure with tiered seating
+    this.createStadiumSeats(stadiumLength, stadiumWidth, seatRows, seatHeight);
 
-    [-4, 4].forEach((x) => {
-      const pole = new THREE.Mesh(poleGeometry, poleMaterial);
-      pole.position.set(x, 4, 0);
-      pole.castShadow = true;
-      if (this.scoreboard) this.scoreboard.add(pole);
-    });
+    // Add crowd
+    this.createCrowd();
 
-    // Score display background
-    const displayGeometry = new THREE.BoxGeometry(10, 3, 0.2);
-    const displayMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
-    const display = new THREE.Mesh(displayGeometry, displayMaterial);
-    display.position.set(0, 8, 2);
-    if (this.scoreboard) this.scoreboard.add(display);
-
-    this.scene.add(this.scoreboard);
-    this.updateScoreboard();
+    // Create corner display screen
+    this.createCornerDisplay();
   }
 
   /**
-   * Update scoreboard display with current scores
+   * Create tiered stadium seating
    */
-  private updateScoreboard(): void {
+  private createStadiumSeats(
+    length: number,
+    width: number,
+    rows: number,
+    rowHeight: number
+  ): void {
+    const seatMaterial = new THREE.MeshLambertMaterial({ color: 0x006633 }); // Sporting green seats
+    const structureMaterial = new THREE.MeshLambertMaterial({
+      color: 0x444444,
+    }); // Gray structure
+
+    // Create three stands (excluding front/near side for better visibility)
+    const stands = [
+      { pos: [0, 0, -width / 2 - 10], rot: [0, 0, 0], len: length }, // Back stand
+      { pos: [-length / 2 - 10, 0, 0], rot: [0, Math.PI / 2, 0], len: width }, // Left stand
+      { pos: [length / 2 + 10, 0, 0], rot: [0, -Math.PI / 2, 0], len: width }, // Right stand
+    ];
+
+    stands.forEach((stand) => {
+      const standGroup = new THREE.Group();
+
+      // Create tiered rows
+      for (let row = 0; row < rows; row++) {
+        const tierY = row * rowHeight + 2;
+        const tierZ = -row * 1.5;
+
+        // Seat row geometry
+        const seatGeometry = new THREE.BoxGeometry(stand.len, 0.5, 1.2);
+        const seats = new THREE.Mesh(seatGeometry, seatMaterial);
+        seats.position.set(0, tierY, tierZ);
+        seats.castShadow = true;
+        seats.receiveShadow = true;
+        standGroup.add(seats);
+
+        // Support structure
+        if (row % 5 === 0) {
+          const supportGeometry = new THREE.BoxGeometry(stand.len, tierY, 0.5);
+          const support = new THREE.Mesh(supportGeometry, structureMaterial);
+          support.position.set(0, tierY / 2, tierZ - 1);
+          standGroup.add(support);
+        }
+      }
+
+      // Roof overhang
+      const roofGeometry = new THREE.BoxGeometry(stand.len + 10, 2, 25);
+      const roofMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+      const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+      roof.position.set(0, rows * rowHeight + 5, -10);
+      roof.castShadow = true;
+      standGroup.add(roof);
+
+      // Position and rotate the stand
+      standGroup.position.set(stand.pos[0], stand.pos[1], stand.pos[2]);
+      standGroup.rotation.set(stand.rot[0], stand.rot[1], stand.rot[2]);
+
+      this.scene.add(standGroup);
+    });
+  }
+
+  /**
+   * Create animated crowd in the stands
+   */
+  private createCrowd(): void {
+    const crowdGroup = new THREE.Group();
+    const fanColors = [0xff0000, 0x00ff00, 0xffffff, 0x000000, 0xffff00]; // Sporting colors plus variety
+
+    // Add fans in three sections (excluding front)
+    const sections = [
+      { x: 0, z: -55, width: 100, rows: 15, standFacing: 0 }, // Back stand
+      { x: -77.5, z: 0, width: 60, rows: 15, standFacing: Math.PI / 2 }, // Left stand
+      { x: 77.5, z: 0, width: 60, rows: 15, standFacing: -Math.PI / 2 }, // Right stand
+    ];
+
+    sections.forEach((section) => {
+      for (let i = 0; i < 150; i++) {
+        // Reduced from 200 to 150 per section
+        const fanGeometry = new THREE.CylinderGeometry(0.3, 0.4, 1.5, 6);
+        const fanColor =
+          fanColors[Math.floor(Math.random() * fanColors.length)];
+        const fanMaterial = new THREE.MeshLambertMaterial({ color: fanColor });
+        const fan = new THREE.Mesh(fanGeometry, fanMaterial);
+
+        // Position fan in a specific row and seat
+        const row = Math.floor(Math.random() * section.rows);
+        const seatPosition = (Math.random() - 0.5) * section.width;
+
+        // Calculate position based on stand
+        let x, z;
+        if (section.standFacing === 0) {
+          // Back stand
+          x = seatPosition;
+          z = section.z - row * 1.5; // Move back into the tiered seating
+        } else if (section.standFacing === Math.PI / 2) {
+          // Left stand
+          x = section.x - row * 1.5; // Move into the tiered seating
+          z = seatPosition;
+        } else {
+          // Right stand
+          x = section.x + row * 1.5; // Move into the tiered seating
+          z = seatPosition;
+        }
+
+        const y = row * 0.8 + 2.5; // Positioned on seats
+
+        fan.position.set(x, y, z);
+        fan.rotation.y = section.standFacing + (Math.random() - 0.5) * 0.3;
+        fan.castShadow = false; // Disable shadows for performance
+        fan.receiveShadow = false;
+
+        // Store animation data
+        fan.userData = {
+          baseY: y,
+          animOffset: Math.random() * Math.PI * 2,
+          animSpeed: 0.5 + Math.random() * 0.5,
+        };
+
+        crowdGroup.add(fan);
+      }
+    });
+
+    crowdGroup.userData = { isCrowd: true };
+    this.scene.add(crowdGroup);
+  }
+
+  /**
+   * Create corner display screen
+   */
+  private createCornerDisplay(): void {
+    // Display screen in far left corner
+    const screenGroup = new THREE.Group();
+
+    // Screen frame
+    const frameGeometry = new THREE.BoxGeometry(20, 12, 1);
+    const frameMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+    frame.castShadow = true;
+    screenGroup.add(frame);
+
+    // Screen display
+    const screenGeometry = new THREE.BoxGeometry(18, 10, 0.1);
+    const screenMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
+    const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+    screen.position.z = 0.5;
+    screenGroup.add(screen);
+
+    // Position in far left corner
+    screenGroup.position.set(-75, 15, -45);
+    screenGroup.rotation.y = Math.PI / 4; // Angle toward field
+
+    this.scene.add(screenGroup);
+    this.scoreboard = screenGroup;
+
+    // Update display
+    this.updateCornerDisplay();
+  }
+
+  /**
+   * Update corner display screen with current scores
+   */
+  private updateCornerDisplay(): void {
     if (!this.scoreboard) return;
 
     // Remove existing score displays
@@ -366,25 +553,25 @@ class SoccerGame {
       }
     });
 
-    // Create digit geometries for scores
-    this.createScoreDigits(this.scores.home, -3, 8, 2.1);
-    this.createScoreDigits(this.scores.away, 3, 8, 2.1);
+    // Create larger score display for corner screen
+    const scoreText = `${this.scores.home
+      .toString()
+      .padStart(2, "0")} - ${this.scores.away.toString().padStart(2, "0")}`;
 
-    // Add separator (colon)
-    const separatorGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    // Create score digits on the screen
+    this.createScoreDigits(this.scores.home, -4, 0, 0.6);
+
+    // Add separator dash
+    const separatorGeometry = new THREE.BoxGeometry(1.5, 0.3, 0.1);
     const separatorMaterial = new THREE.MeshLambertMaterial({
       color: 0xffffff,
     });
+    const separator = new THREE.Mesh(separatorGeometry, separatorMaterial);
+    separator.position.set(0, 0, 0.6);
+    separator.userData = { isScore: true };
+    if (this.scoreboard) this.scoreboard.add(separator);
 
-    const dot1 = new THREE.Mesh(separatorGeometry, separatorMaterial);
-    dot1.position.set(0, 8.5, 2.1);
-    dot1.userData = { isScore: true };
-    if (this.scoreboard) this.scoreboard.add(dot1);
-
-    const dot2 = new THREE.Mesh(separatorGeometry, separatorMaterial);
-    dot2.position.set(0, 7.5, 2.1);
-    dot2.userData = { isScore: true };
-    if (this.scoreboard) this.scoreboard.add(dot2);
+    this.createScoreDigits(this.scores.away, 4, 0, 0.6);
   }
 
   /**
@@ -399,7 +586,7 @@ class SoccerGame {
     const digitString = score.toString().padStart(2, "0");
 
     digitString.split("").forEach((digit, index) => {
-      this.create7SegmentDigit(parseInt(digit), x + index * 1.5, y, z);
+      this.create7SegmentDigit(parseInt(digit), x + index * 2.5, y, z);
     });
   }
 
@@ -430,26 +617,17 @@ class SoccerGame {
     ];
 
     const pattern = digitPatterns[digit];
-    const segmentSize = 0.15;
-    const segmentLength = 0.8;
+    const segmentSize = 0.3; // Doubled from 0.15
+    const segmentLength = 1.6; // Doubled from 0.8
 
     // Segment positions and orientations
     const segments = [
-      { pos: [0, 0.9, 0], size: [segmentLength, segmentSize, segmentSize] }, // top
-      { pos: [0.45, 0.45, 0], size: [segmentSize, segmentLength, segmentSize] }, // topRight
-      {
-        pos: [0.45, -0.45, 0],
-        size: [segmentSize, segmentLength, segmentSize],
-      }, // bottomRight
-      { pos: [0, -0.9, 0], size: [segmentLength, segmentSize, segmentSize] }, // bottom
-      {
-        pos: [-0.45, -0.45, 0],
-        size: [segmentSize, segmentLength, segmentSize],
-      }, // bottomLeft
-      {
-        pos: [-0.45, 0.45, 0],
-        size: [segmentSize, segmentLength, segmentSize],
-      }, // topLeft
+      { pos: [0, 1.8, 0], size: [segmentLength, segmentSize, segmentSize] }, // top
+      { pos: [0.9, 0.9, 0], size: [segmentSize, segmentLength, segmentSize] }, // topRight
+      { pos: [0.9, -0.9, 0], size: [segmentSize, segmentLength, segmentSize] }, // bottomRight
+      { pos: [0, -1.8, 0], size: [segmentLength, segmentSize, segmentSize] }, // bottom
+      { pos: [-0.9, -0.9, 0], size: [segmentSize, segmentLength, segmentSize] }, // bottomLeft
+      { pos: [-0.9, 0.9, 0], size: [segmentSize, segmentLength, segmentSize] }, // topLeft
       { pos: [0, 0, 0], size: [segmentLength, segmentSize, segmentSize] }, // middle
     ];
 
@@ -522,6 +700,148 @@ class SoccerGame {
 
     this.confettiParticles.push(particles);
     this.scene.add(particles);
+  }
+
+  /**
+   * Start fan celebration when goal is scored
+   */
+  private startCelebration(): void {
+    this.isCelebrating = true;
+    this.celebrationTime = 0;
+
+    // Play goal sound immediately
+    this.playGoalSound();
+
+    // Create visual effects for celebration
+    this.createCelebrationEffects();
+
+    // Play horn sounds (slightly delayed)
+    setTimeout(() => {
+      this.playHornSounds();
+    }, 200);
+  }
+
+  /**
+   * Create celebration effects (horns, flags, etc.)
+   */
+  private createCelebrationEffects(): void {
+    // Clear any existing effects
+    this.celebrationEffects.forEach((effect) => {
+      this.scene.remove(effect);
+      if (effect.geometry) effect.geometry.dispose();
+      if (effect.material) (effect.material as THREE.Material).dispose();
+    });
+    this.celebrationEffects = [];
+
+    // Create horn/vuvuzela effects from random fans
+    for (let i = 0; i < 20; i++) {
+      // Horn geometry (simple cone)
+      const hornGeometry = new THREE.ConeGeometry(0.3, 2, 6);
+      const hornMaterial = new THREE.MeshLambertMaterial({
+        color: Math.random() > 0.5 ? 0xff0000 : 0x00ff00, // Red or green
+      });
+      const horn = new THREE.Mesh(hornGeometry, hornMaterial);
+
+      // Random position in stands
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 65 + Math.random() * 15;
+      const height = 5 + Math.random() * 10;
+
+      horn.position.set(
+        Math.cos(angle) * radius,
+        height,
+        Math.sin(angle) * radius
+      );
+
+      // Point horn toward field
+      horn.lookAt(0, height, 0);
+      horn.rotateX(-Math.PI / 4);
+
+      horn.userData = {
+        isEffect: true,
+        baseY: height,
+        animOffset: Math.random() * Math.PI * 2,
+      };
+
+      this.celebrationEffects.push(horn);
+      this.scene.add(horn);
+    }
+
+    // Create flag effects
+    for (let i = 0; i < 15; i++) {
+      const flagPoleGeometry = new THREE.CylinderGeometry(0.05, 0.05, 3);
+      const flagPoleMaterial = new THREE.MeshLambertMaterial({
+        color: 0x666666,
+      });
+      const flagPole = new THREE.Mesh(flagPoleGeometry, flagPoleMaterial);
+
+      const flagGeometry = new THREE.PlaneGeometry(1.5, 1);
+      const flagMaterial = new THREE.MeshLambertMaterial({
+        color: Math.random() > 0.5 ? 0x007a33 : 0xffffff, // Sporting colors
+        side: THREE.DoubleSide,
+      });
+      const flag = new THREE.Mesh(flagGeometry, flagMaterial);
+      flag.position.set(0, 1, 0.5);
+      flagPole.add(flag);
+
+      // Random position
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 60 + Math.random() * 20;
+      const height = 6 + Math.random() * 12;
+
+      flagPole.position.set(
+        Math.cos(angle) * radius,
+        height,
+        Math.sin(angle) * radius
+      );
+
+      flagPole.userData = {
+        isEffect: true,
+        flag: flag,
+        waveSpeed: 2 + Math.random() * 2,
+        waveAmount: 0.5 + Math.random() * 0.5,
+      };
+
+      this.celebrationEffects.push(flagPole);
+      this.scene.add(flagPole);
+    }
+
+    // Create colored smoke/streamer particles from the stands
+    for (let i = 0; i < 30; i++) {
+      const particleGeometry = new THREE.SphereGeometry(0.5, 4, 4);
+      const particleColor = Math.random() > 0.5 ? 0x007a33 : 0xff0000;
+      const particleMaterial = new THREE.MeshLambertMaterial({
+        color: particleColor,
+        transparent: true,
+        opacity: 0.8,
+      });
+      const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+
+      // Start from stands
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 65 + Math.random() * 15;
+      const height = 5 + Math.random() * 15;
+
+      particle.position.set(
+        Math.cos(angle) * radius,
+        height,
+        Math.sin(angle) * radius
+      );
+
+      // Give it velocity toward the field
+      particle.userData = {
+        isEffect: true,
+        velocity: new THREE.Vector3(
+          -Math.cos(angle) * 10,
+          5 + Math.random() * 10,
+          -Math.sin(angle) * 10
+        ),
+        lifetime: 0,
+      };
+
+      this.celebrationEffects.push(particle);
+      this.scene.add(particle);
+    }
   }
 
   /**
@@ -813,10 +1133,271 @@ class SoccerGame {
   }
 
   /**
+   * Initialize audio context
+   */
+  private initAudio(): void {
+    if (this.audioContext) return;
+
+    try {
+      this.audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
+
+      // Update UI to show audio is enabled
+      const audioStatus = document.querySelector("#controls p:last-child");
+      if (audioStatus) {
+        audioStatus.textContent = "🔊 Sound enabled";
+      }
+    } catch (e) {
+      console.warn("Web Audio API not supported");
+    }
+  }
+
+  /**
+   * Create and play horn/vuvuzela sounds
+   */
+  private playHornSounds(): void {
+    if (!this.audioContext) return;
+
+    // Stop any existing horn sounds
+    this.hornSounds.forEach((osc) => {
+      try {
+        osc.stop();
+      } catch (e) {
+        // Already stopped
+      }
+    });
+    this.hornSounds = [];
+
+    // Create multiple horn sounds with different pitches
+    const hornCount = 5;
+    for (let i = 0; i < hornCount; i++) {
+      setTimeout(() => {
+        if (!this.audioContext) return;
+
+        // Create oscillator for horn sound
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        const filter = this.audioContext.createBiquadFilter();
+
+        // Configure horn sound (low frequency buzz like vuvuzela)
+        const baseFrequency = 200 + Math.random() * 50; // 200-250 Hz
+        oscillator.frequency.setValueAtTime(
+          baseFrequency,
+          this.audioContext.currentTime
+        );
+        oscillator.type = "sawtooth";
+
+        // Add filter for more realistic horn sound
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(400, this.audioContext.currentTime);
+        filter.Q.setValueAtTime(10, this.audioContext.currentTime);
+
+        // Volume envelope
+        gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(
+          0.15,
+          this.audioContext.currentTime + 0.1
+        );
+        gainNode.gain.linearRampToValueAtTime(
+          0.1,
+          this.audioContext.currentTime + 1.0
+        );
+        gainNode.gain.linearRampToValueAtTime(
+          0,
+          this.audioContext.currentTime + 3.0
+        );
+
+        // Connect nodes
+        oscillator.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+
+        // Start and schedule stop
+        oscillator.start();
+        oscillator.stop(this.audioContext.currentTime + 3.0);
+
+        this.hornSounds.push(oscillator);
+
+        // Add some modulation for realism
+        const lfo = this.audioContext.createOscillator();
+        const lfoGain = this.audioContext.createGain();
+        lfo.frequency.setValueAtTime(
+          5 + Math.random() * 3,
+          this.audioContext.currentTime
+        );
+        lfoGain.gain.setValueAtTime(10, this.audioContext.currentTime);
+        lfo.connect(lfoGain);
+        lfoGain.connect(oscillator.frequency);
+        lfo.start();
+        lfo.stop(this.audioContext.currentTime + 3.0);
+      }, i * 200); // Stagger the horn sounds
+    }
+
+    // Add crowd cheer sound
+    this.playCheerSound();
+  }
+
+  /**
+   * Create crowd cheer sound effect
+   */
+  private playCheerSound(): void {
+    if (!this.audioContext) return;
+
+    // Create white noise for crowd sound
+    const bufferSize = this.audioContext.sampleRate * 4; // 4 seconds
+    const buffer = this.audioContext.createBuffer(
+      1,
+      bufferSize,
+      this.audioContext.sampleRate
+    );
+    const data = buffer.getChannelData(0);
+
+    // Fill with noise
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() - 0.5) * 0.5;
+    }
+
+    const noise = this.audioContext.createBufferSource();
+    noise.buffer = buffer;
+
+    // Filter to make it sound like distant crowd
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(800, this.audioContext.currentTime);
+    filter.Q.setValueAtTime(0.5, this.audioContext.currentTime);
+
+    // Volume control
+    const gainNode = this.audioContext.createGain();
+    gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(
+      0.05,
+      this.audioContext.currentTime + 0.5
+    );
+    gainNode.gain.linearRampToValueAtTime(
+      0.03,
+      this.audioContext.currentTime + 2.0
+    );
+    gainNode.gain.linearRampToValueAtTime(
+      0,
+      this.audioContext.currentTime + 4.0
+    );
+
+    // Connect and play
+    noise.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(this.audioContext.destination);
+    noise.start();
+    noise.stop(this.audioContext.currentTime + 4.0);
+  }
+
+  /**
+   * Play goal sound effect
+   */
+  private playGoalSound(): void {
+    if (!this.audioContext) return;
+
+    // Create a quick "GOAL!" sound using oscillators
+    const duration = 0.5;
+    const currentTime = this.audioContext.currentTime;
+
+    // Create ascending tone for goal
+    const osc1 = this.audioContext.createOscillator();
+    const gain1 = this.audioContext.createGain();
+
+    osc1.frequency.setValueAtTime(400, currentTime);
+    osc1.frequency.exponentialRampToValueAtTime(800, currentTime + duration);
+
+    gain1.gain.setValueAtTime(0.3, currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.01, currentTime + duration);
+
+    osc1.connect(gain1);
+    gain1.connect(this.audioContext.destination);
+
+    osc1.start();
+    osc1.stop(currentTime + duration);
+
+    // Add a second harmonic
+    const osc2 = this.audioContext.createOscillator();
+    const gain2 = this.audioContext.createGain();
+
+    osc2.frequency.setValueAtTime(600, currentTime);
+    osc2.frequency.exponentialRampToValueAtTime(1200, currentTime + duration);
+
+    gain2.gain.setValueAtTime(0.2, currentTime);
+    gain2.gain.exponentialRampToValueAtTime(0.01, currentTime + duration);
+
+    osc2.connect(gain2);
+    gain2.connect(this.audioContext.destination);
+
+    osc2.start();
+    osc2.stop(currentTime + duration);
+  }
+
+  /**
+   * Play kick sound effect
+   */
+  private playKickSound(): void {
+    if (!this.audioContext) return;
+
+    // Create a short percussive sound for kick
+    const currentTime = this.audioContext.currentTime;
+
+    // White noise burst
+    const bufferSize = this.audioContext.sampleRate * 0.05; // 50ms
+    const buffer = this.audioContext.createBuffer(
+      1,
+      bufferSize,
+      this.audioContext.sampleRate
+    );
+    const data = buffer.getChannelData(0);
+
+    // Fill with noise that decays
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() - 0.5) * Math.exp((-i / bufferSize) * 5);
+    }
+
+    const noise = this.audioContext.createBufferSource();
+    noise.buffer = buffer;
+
+    // Filter for "thump" sound
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(200, currentTime);
+
+    const gain = this.audioContext.createGain();
+    gain.gain.setValueAtTime(0.5, currentTime);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.audioContext.destination);
+
+    noise.start();
+
+    // Add a low frequency thump
+    const osc = this.audioContext.createOscillator();
+    const oscGain = this.audioContext.createGain();
+
+    osc.frequency.setValueAtTime(60, currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30, currentTime + 0.1);
+
+    oscGain.gain.setValueAtTime(0.3, currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, currentTime + 0.1);
+
+    osc.connect(oscGain);
+    oscGain.connect(this.audioContext.destination);
+
+    osc.start();
+    osc.stop(currentTime + 0.1);
+  }
+
+  /**
    * Update game logic
    */
   private update(deltaTime: number): void {
-    const moveSpeed = 10 * deltaTime;
+    const moveSpeed = 15 * deltaTime; // Increased from 10 to 15
+
+    // Update animation time
+    this.animationTime += deltaTime;
 
     // Track if player is moving
     let isMoving = false;
@@ -863,8 +1444,7 @@ class SoccerGame {
 
     // Animate legs when moving
     if (isMoving && this.playerOnGround && this.player.userData) {
-      this.animationTime += deltaTime * 10; // Animation speed
-      const swingAmount = Math.sin(this.animationTime) * 0.3;
+      const swingAmount = Math.sin(this.animationTime * 10) * 0.3;
 
       // Animate legs
       this.player.userData.bones.leftLeg.rotation.x = swingAmount;
@@ -887,12 +1467,80 @@ class SoccerGame {
       const distance = this.player.position.distanceTo(this.ball.position);
 
       // If close enough to ball, kick it
-      if (distance < 2) {
+      if (distance < 2.5) {
         // Apply force to ball in player's facing direction
-        const kickPower = 30;
+        const kickPower = 25; // Reduced from 40 to 25
         this.ballVelocity.x = -Math.sin(this.player.rotation.y) * kickPower;
         this.ballVelocity.z = -Math.cos(this.player.rotation.y) * kickPower;
         this.ballVelocity.y = 5; // Small upward kick
+
+        // Stop dribbling when kicking
+        this.isDribbling = false;
+        this.playKickSound(); // Play kick sound
+      }
+    }
+
+    // Dribbling mechanics
+    const ballDistance = this.player.position.distanceTo(this.ball.position);
+
+    // Start dribbling if we run into the ball
+    if (!this.isDribbling && ballDistance < 1.5 && this.ball.position.y < 1) {
+      this.isDribbling = true;
+      // Calculate initial offset from player
+      this.dribbleOffset.subVectors(this.ball.position, this.player.position);
+      this.dribbleOffset.y = 0; // Keep it on the ground
+    }
+
+    // Continue dribbling
+    if (this.isDribbling) {
+      // Stop dribbling if ball gets too far (kicked or separated)
+      if (
+        ballDistance > 3 ||
+        Math.abs(this.ballVelocity.x) > 5 ||
+        Math.abs(this.ballVelocity.z) > 5
+      ) {
+        this.isDribbling = false;
+      } else {
+        // Keep ball in front of player based on facing direction
+        const dribbleDistance = 1.2;
+        const targetX =
+          this.player.position.x -
+          Math.sin(this.player.rotation.y) * dribbleDistance;
+        const targetZ =
+          this.player.position.z -
+          Math.cos(this.player.rotation.y) * dribbleDistance;
+
+        // Smoothly move ball to target position
+        const lerpFactor = 0.2;
+        this.ball.position.x += (targetX - this.ball.position.x) * lerpFactor;
+        this.ball.position.z += (targetZ - this.ball.position.z) * lerpFactor;
+
+        // Add bounce effect when moving
+        if (isMoving) {
+          const bounceHeight =
+            0.5 + Math.abs(Math.sin(this.animationTime * 8)) * 0.15;
+          this.ball.position.y = bounceHeight;
+        } else {
+          this.ball.position.y = 0.5; // Keep at ground level when stationary
+        }
+
+        // Reduce ball velocity when dribbling
+        this.ballVelocity.multiplyScalar(0.8);
+
+        // Add slight random movement for realistic dribbling
+        if (isMoving) {
+          this.ball.position.x += (Math.random() - 0.5) * 0.05;
+          this.ball.position.z += (Math.random() - 0.5) * 0.05;
+
+          // Rotate ball based on movement direction
+          const moveDir = new THREE.Vector3(
+            -Math.sin(this.player.rotation.y),
+            0,
+            -Math.cos(this.player.rotation.y)
+          );
+          this.ball.rotation.x -= moveDir.z * 0.2;
+          this.ball.rotation.z += moveDir.x * 0.2;
+        }
       }
     }
 
@@ -917,26 +1565,30 @@ class SoccerGame {
       this.player.rotation.copy(currentRot);
     }
 
-    // Update ball physics
-    // Apply velocity
-    this.ball.position.add(this.ballVelocity.clone().multiplyScalar(deltaTime));
+    // Update ball physics (skip if dribbling)
+    if (!this.isDribbling) {
+      // Apply velocity
+      this.ball.position.add(
+        this.ballVelocity.clone().multiplyScalar(deltaTime)
+      );
 
-    // Apply gravity to ball
-    if (this.ball.position.y > 0.5) {
-      this.ballVelocity.y -= 30 * deltaTime;
-    } else {
-      // Ball on ground
-      this.ball.position.y = 0.5;
-      if (this.ballVelocity.y < 0) {
-        this.ballVelocity.y = -this.ballVelocity.y * 0.7; // Bounce with energy loss
-        if (Math.abs(this.ballVelocity.y) < 1) {
-          this.ballVelocity.y = 0;
+      // Apply gravity to ball
+      if (this.ball.position.y > 0.5) {
+        this.ballVelocity.y -= 30 * deltaTime;
+      } else {
+        // Ball on ground
+        this.ball.position.y = 0.5;
+        if (this.ballVelocity.y < 0) {
+          this.ballVelocity.y = -this.ballVelocity.y * 0.7; // Bounce with energy loss
+          if (Math.abs(this.ballVelocity.y) < 1) {
+            this.ballVelocity.y = 0;
+          }
         }
-      }
 
-      // Apply ground friction
-      this.ballVelocity.x *= 0.98;
-      this.ballVelocity.z *= 0.98;
+        // Apply ground friction
+        this.ballVelocity.x *= 0.98;
+        this.ballVelocity.z *= 0.98;
+      }
     }
 
     // Keep ball within field bounds (but allow entry into goal areas)
@@ -986,7 +1638,10 @@ class SoccerGame {
         }
 
         // Update scoreboard display
-        this.updateScoreboard();
+        this.updateCornerDisplay();
+
+        // Trigger fan celebration
+        this.startCelebration();
 
         // Goal scored! Create confetti
         this.createConfetti(new THREE.Vector3(goal.position.x, 4, 0));
@@ -994,6 +1649,7 @@ class SoccerGame {
         // Reset ball to center
         this.ball.position.set(0, 0.5, 0);
         this.ballVelocity.set(0, 0, 0);
+        this.isDribbling = false;
 
         // Reset player position
         this.player.position.set(-fieldLength / 4, 0.5, 0);
@@ -1004,6 +1660,7 @@ class SoccerGame {
     if (Math.abs(this.ball.position.x) > fieldLength / 2 + 5) {
       this.ball.position.set(0, 0.5, 0);
       this.ballVelocity.set(0, 0, 0);
+      this.isDribbling = false;
     }
 
     // Update confetti particles
@@ -1049,6 +1706,93 @@ class SoccerGame {
     this.camera.position.z = 50;
     this.camera.lookAt(this.player.position.x, 0, this.player.position.z);
 
+    // Animate crowd
+    this.scene.traverse((child) => {
+      if (
+        child.parent &&
+        child.parent.userData &&
+        child.parent.userData.isCrowd
+      ) {
+        const mesh = child as THREE.Mesh;
+        if (mesh.userData.baseY) {
+          // Enhanced jumping during celebration
+          const time = this.animationTime + mesh.userData.animOffset;
+          const celebrationMultiplier = this.isCelebrating ? 3 : 1;
+          const jumpSpeed = mesh.userData.animSpeed * celebrationMultiplier;
+          const jumpHeight =
+            Math.sin(time * jumpSpeed) * 0.3 * celebrationMultiplier;
+          mesh.position.y = mesh.userData.baseY + Math.max(0, jumpHeight);
+
+          // Random rotation during celebration
+          if (this.isCelebrating) {
+            mesh.rotation.y += Math.sin(time * 2) * 0.05;
+          }
+        }
+      }
+    });
+
+    // Update celebration effects
+    if (this.isCelebrating) {
+      this.celebrationTime += deltaTime;
+
+      // Animate horns and flags
+      this.celebrationEffects.forEach((effect) => {
+        if (effect.userData.isEffect) {
+          // Animate horns (bobbing motion)
+          if (effect.userData.baseY) {
+            const time = this.animationTime + effect.userData.animOffset;
+            effect.position.y =
+              effect.userData.baseY + Math.sin(time * 3) * 0.5;
+            effect.rotation.z = Math.sin(time * 2) * 0.1;
+          }
+
+          // Animate flags (waving motion)
+          if (effect.userData.flag) {
+            const flag = effect.userData.flag as THREE.Mesh;
+            const time = this.animationTime * effect.userData.waveSpeed;
+            flag.rotation.y = Math.sin(time) * effect.userData.waveAmount;
+            effect.rotation.y += deltaTime * 0.5; // Rotate flag pole
+          }
+
+          // Animate smoke/streamer particles
+          if (effect.userData.velocity) {
+            // Update position
+            effect.position.add(
+              effect.userData.velocity.clone().multiplyScalar(deltaTime)
+            );
+
+            // Apply gravity
+            effect.userData.velocity.y -= 15 * deltaTime;
+
+            // Update lifetime and opacity
+            effect.userData.lifetime += deltaTime;
+            const material = effect.material as THREE.MeshLambertMaterial;
+            material.opacity = Math.max(
+              0,
+              0.8 - effect.userData.lifetime * 0.2
+            );
+
+            // Rotate particle
+            effect.rotation.x += deltaTime * 2;
+            effect.rotation.z += deltaTime * 3;
+          }
+        }
+      });
+
+      // End celebration after 5 seconds
+      if (this.celebrationTime > 5) {
+        this.isCelebrating = false;
+
+        // Remove celebration effects
+        this.celebrationEffects.forEach((effect) => {
+          this.scene.remove(effect);
+          if (effect.geometry) effect.geometry.dispose();
+          if (effect.material) (effect.material as THREE.Material).dispose();
+        });
+        this.celebrationEffects = [];
+      }
+    }
+
     // Update lastKeys for next frame
     Object.assign(this.lastKeys, this.keys);
   }
@@ -1059,7 +1803,12 @@ class SoccerGame {
   private animate = (): void => {
     requestAnimationFrame(this.animate);
 
-    const deltaTime = 0.016; // Assuming 60 FPS
+    const currentTime = performance.now();
+    const deltaTime =
+      this.lastTime === 0
+        ? 0.016
+        : Math.min((currentTime - this.lastTime) / 1000, 0.1);
+    this.lastTime = currentTime;
 
     this.update(deltaTime);
     this.renderer.render(this.scene, this.camera);
