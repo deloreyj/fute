@@ -19,6 +19,8 @@ class SoccerGame {
   // Game objects
   private player: THREE.Mesh;
   private ball: THREE.Mesh;
+  private goals: THREE.Mesh[] = [];
+  private confettiParticles: THREE.Points[] = [];
 
   // Movement state
   private keys = {
@@ -27,7 +29,6 @@ class SoccerGame {
     ArrowLeft: false,
     ArrowRight: false,
     Space: false,
-    b: false,
     t: false,
   };
 
@@ -37,7 +38,6 @@ class SoccerGame {
     ArrowLeft: false,
     ArrowRight: false,
     Space: false,
-    b: false,
     t: false,
   };
 
@@ -45,11 +45,21 @@ class SoccerGame {
   private playerVelocity = new THREE.Vector3();
   private playerOnGround = true;
 
+  // Ball physics
+  private ballVelocity = new THREE.Vector3();
+
   // Animation
   private animationTime = 0;
 
   // Current team
   private currentTeam = TeamType.SPORTING;
+
+  // Scoring system
+  private scores = {
+    home: 0, // Left side (player starts here)
+    away: 0, // Right side
+  };
+  private scoreboard: THREE.Group | null = null;
 
   constructor() {
     // Initialize Three.js scene
@@ -63,7 +73,7 @@ class SoccerGame {
       0.1,
       1000
     );
-    this.camera.position.set(0, 10, 20);
+    this.camera.position.set(0, 25, 50);
     this.camera.lookAt(0, 0, 0);
 
     // Set up renderer
@@ -80,6 +90,7 @@ class SoccerGame {
     // Initialize game objects
     this.setupLighting();
     this.createField();
+    this.createScoreboard();
     this.player = this.createPlayer(TeamType.SPORTING);
     this.ball = this.createBall();
 
@@ -103,14 +114,14 @@ class SoccerGame {
 
     // Directional light for shadows
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 20, 10);
+    directionalLight.position.set(20, 40, 20);
     directionalLight.castShadow = true;
-    directionalLight.shadow.camera.left = -30;
-    directionalLight.shadow.camera.right = 30;
-    directionalLight.shadow.camera.top = 30;
-    directionalLight.shadow.camera.bottom = -30;
+    directionalLight.shadow.camera.left = -60;
+    directionalLight.shadow.camera.right = 60;
+    directionalLight.shadow.camera.top = 80;
+    directionalLight.shadow.camera.bottom = -80;
     directionalLight.shadow.camera.near = 0.1;
-    directionalLight.shadow.camera.far = 50;
+    directionalLight.shadow.camera.far = 150;
     this.scene.add(directionalLight);
   }
 
@@ -118,8 +129,13 @@ class SoccerGame {
    * Create the soccer field
    */
   private createField(): void {
+    // Standard field dimensions: 115 yards (105m) x 75 yards (68.5m)
+    // Using 1 unit = 1 yard for simplicity
+    const fieldLength = 115; // yards (x-axis)
+    const fieldWidth = 75; // yards (z-axis)
+
     // Create grass field
-    const fieldGeometry = new THREE.BoxGeometry(40, 0.1, 60);
+    const fieldGeometry = new THREE.BoxGeometry(fieldLength, 0.1, fieldWidth);
     const fieldMaterial = new THREE.MeshLambertMaterial({ color: 0x00aa00 });
     const field = new THREE.Mesh(fieldGeometry, fieldMaterial);
     field.receiveShadow = true;
@@ -128,18 +144,384 @@ class SoccerGame {
     // Add white lines (simplified)
     const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    // Center line
-    const centerLineGeometry = new THREE.BoxGeometry(0.2, 0.11, 60);
+    // Center line (along z-axis)
+    const centerLineGeometry = new THREE.BoxGeometry(0.3, 0.11, fieldWidth);
     const centerLine = new THREE.Mesh(centerLineGeometry, lineMaterial);
     centerLine.position.y = 0.05;
     this.scene.add(centerLine);
 
-    // Center circle
-    const centerCircleGeometry = new THREE.RingGeometry(5, 5.2, 32);
+    // Center circle (10 yard radius)
+    const centerCircleGeometry = new THREE.RingGeometry(10, 10.3, 32);
     const centerCircle = new THREE.Mesh(centerCircleGeometry, lineMaterial);
     centerCircle.rotation.x = -Math.PI / 2;
     centerCircle.position.y = 0.06;
     this.scene.add(centerCircle);
+
+    // Field boundary lines
+    // Side lines (along x-axis)
+    const sideLineGeometry = new THREE.BoxGeometry(fieldLength, 0.11, 0.3);
+    const topSideLine = new THREE.Mesh(sideLineGeometry, lineMaterial);
+    topSideLine.position.set(0, 0.05, -fieldWidth / 2);
+    this.scene.add(topSideLine);
+
+    const bottomSideLine = new THREE.Mesh(sideLineGeometry, lineMaterial);
+    bottomSideLine.position.set(0, 0.05, fieldWidth / 2);
+    this.scene.add(bottomSideLine);
+
+    // Goal lines (along z-axis)
+    const goalLineGeometry = new THREE.BoxGeometry(0.3, 0.11, fieldWidth);
+    const leftGoalLine = new THREE.Mesh(goalLineGeometry, lineMaterial);
+    leftGoalLine.position.set(-fieldLength / 2, 0.05, 0);
+    this.scene.add(leftGoalLine);
+
+    const rightGoalLine = new THREE.Mesh(goalLineGeometry, lineMaterial);
+    rightGoalLine.position.set(fieldLength / 2, 0.05, 0);
+    this.scene.add(rightGoalLine);
+
+    // Penalty areas (18 yard box)
+    const penaltyAreaWidth = 44; // yards
+    const penaltyAreaDepth = 18; // yards
+
+    // Left penalty area
+    const penaltyBoxGeometry = new THREE.BoxGeometry(
+      0.3,
+      0.11,
+      penaltyAreaWidth
+    );
+    const leftPenaltyFront = new THREE.Mesh(penaltyBoxGeometry, lineMaterial);
+    leftPenaltyFront.position.set(-fieldLength / 2 + penaltyAreaDepth, 0.05, 0);
+    this.scene.add(leftPenaltyFront);
+
+    const penaltySideGeometry = new THREE.BoxGeometry(
+      penaltyAreaDepth,
+      0.11,
+      0.3
+    );
+    const leftPenaltyTop = new THREE.Mesh(penaltySideGeometry, lineMaterial);
+    leftPenaltyTop.position.set(
+      -fieldLength / 2 + penaltyAreaDepth / 2,
+      0.05,
+      -penaltyAreaWidth / 2
+    );
+    this.scene.add(leftPenaltyTop);
+
+    const leftPenaltyBottom = new THREE.Mesh(penaltySideGeometry, lineMaterial);
+    leftPenaltyBottom.position.set(
+      -fieldLength / 2 + penaltyAreaDepth / 2,
+      0.05,
+      penaltyAreaWidth / 2
+    );
+    this.scene.add(leftPenaltyBottom);
+
+    // Right penalty area
+    const rightPenaltyFront = new THREE.Mesh(penaltyBoxGeometry, lineMaterial);
+    rightPenaltyFront.position.set(fieldLength / 2 - penaltyAreaDepth, 0.05, 0);
+    this.scene.add(rightPenaltyFront);
+
+    const rightPenaltyTop = new THREE.Mesh(penaltySideGeometry, lineMaterial);
+    rightPenaltyTop.position.set(
+      fieldLength / 2 - penaltyAreaDepth / 2,
+      0.05,
+      -penaltyAreaWidth / 2
+    );
+    this.scene.add(rightPenaltyTop);
+
+    const rightPenaltyBottom = new THREE.Mesh(
+      penaltySideGeometry,
+      lineMaterial
+    );
+    rightPenaltyBottom.position.set(
+      fieldLength / 2 - penaltyAreaDepth / 2,
+      0.05,
+      penaltyAreaWidth / 2
+    );
+    this.scene.add(rightPenaltyBottom);
+
+    // Create goals
+    this.createGoals(fieldLength);
+  }
+
+  /**
+   * Create goal posts at each end of the field
+   */
+  private createGoals(fieldLength: number): void {
+    const goalWidth = 16; // yards (doubled from 8)
+    const goalHeight = 5.34; // yards (doubled from 2.67)
+    const postRadius = 0.15;
+    const postMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+
+    // Create goals for both sides
+    [-1, 1].forEach((side) => {
+      const goalGroup = new THREE.Group();
+
+      // Goal posts (cylinders)
+      const postGeometry = new THREE.CylinderGeometry(
+        postRadius,
+        postRadius,
+        goalHeight
+      );
+
+      // Left post
+      const leftPost = new THREE.Mesh(postGeometry, postMaterial);
+      leftPost.position.set(
+        (side * fieldLength) / 2,
+        goalHeight / 2,
+        -goalWidth / 2
+      );
+      leftPost.castShadow = true;
+      goalGroup.add(leftPost);
+
+      // Right post
+      const rightPost = new THREE.Mesh(postGeometry, postMaterial);
+      rightPost.position.set(
+        (side * fieldLength) / 2,
+        goalHeight / 2,
+        goalWidth / 2
+      );
+      rightPost.castShadow = true;
+      goalGroup.add(rightPost);
+
+      // Crossbar
+      const crossbarGeometry = new THREE.BoxGeometry(0.3, 0.3, goalWidth);
+      const crossbar = new THREE.Mesh(crossbarGeometry, postMaterial);
+      crossbar.position.set((side * fieldLength) / 2, goalHeight, 0);
+      crossbar.castShadow = true;
+      goalGroup.add(crossbar);
+
+      // Goal net (simplified as a semi-transparent box)
+      const netGeometry = new THREE.BoxGeometry(2, goalHeight, goalWidth);
+      const netMaterial = new THREE.MeshLambertMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide,
+      });
+      const net = new THREE.Mesh(netGeometry, netMaterial);
+      net.position.set(side * (fieldLength / 2 + 1), goalHeight / 2, 0);
+      goalGroup.add(net);
+
+      this.scene.add(goalGroup);
+
+      // Store goal for collision detection
+      const goalMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2, goalHeight, goalWidth),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      goalMesh.position.set((side * fieldLength) / 2, goalHeight / 2, 0);
+      goalMesh.userData = { side: side };
+      this.goals.push(goalMesh);
+      this.scene.add(goalMesh);
+    });
+  }
+
+  /**
+   * Create scoreboard at center of field
+   */
+  private createScoreboard(): void {
+    this.scoreboard = new THREE.Group();
+
+    // Scoreboard base (elevated platform)
+    const baseGeometry = new THREE.BoxGeometry(12, 0.5, 4);
+    const baseMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const base = new THREE.Mesh(baseGeometry, baseMaterial);
+    base.position.set(0, 8, 0);
+    base.castShadow = true;
+    if (this.scoreboard) this.scoreboard.add(base);
+
+    // Support poles
+    const poleGeometry = new THREE.CylinderGeometry(0.2, 0.2, 8);
+    const poleMaterial = new THREE.MeshLambertMaterial({ color: 0x666666 });
+
+    [-4, 4].forEach((x) => {
+      const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+      pole.position.set(x, 4, 0);
+      pole.castShadow = true;
+      if (this.scoreboard) this.scoreboard.add(pole);
+    });
+
+    // Score display background
+    const displayGeometry = new THREE.BoxGeometry(10, 3, 0.2);
+    const displayMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 });
+    const display = new THREE.Mesh(displayGeometry, displayMaterial);
+    display.position.set(0, 8, 2);
+    if (this.scoreboard) this.scoreboard.add(display);
+
+    this.scene.add(this.scoreboard);
+    this.updateScoreboard();
+  }
+
+  /**
+   * Update scoreboard display with current scores
+   */
+  private updateScoreboard(): void {
+    if (!this.scoreboard) return;
+
+    // Remove existing score displays
+    const existingScores = this.scoreboard.children.filter(
+      (child) => child.userData && child.userData.isScore
+    );
+    existingScores.forEach((score) => {
+      if (this.scoreboard) {
+        this.scoreboard.remove(score);
+      }
+    });
+
+    // Create digit geometries for scores
+    this.createScoreDigits(this.scores.home, -3, 8, 2.1);
+    this.createScoreDigits(this.scores.away, 3, 8, 2.1);
+
+    // Add separator (colon)
+    const separatorGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const separatorMaterial = new THREE.MeshLambertMaterial({
+      color: 0xffffff,
+    });
+
+    const dot1 = new THREE.Mesh(separatorGeometry, separatorMaterial);
+    dot1.position.set(0, 8.5, 2.1);
+    dot1.userData = { isScore: true };
+    if (this.scoreboard) this.scoreboard.add(dot1);
+
+    const dot2 = new THREE.Mesh(separatorGeometry, separatorMaterial);
+    dot2.position.set(0, 7.5, 2.1);
+    dot2.userData = { isScore: true };
+    if (this.scoreboard) this.scoreboard.add(dot2);
+  }
+
+  /**
+   * Create 7-segment style digits for score display
+   */
+  private createScoreDigits(
+    score: number,
+    x: number,
+    y: number,
+    z: number
+  ): void {
+    const digitString = score.toString().padStart(2, "0");
+
+    digitString.split("").forEach((digit, index) => {
+      this.create7SegmentDigit(parseInt(digit), x + index * 1.5, y, z);
+    });
+  }
+
+  /**
+   * Create a 7-segment display digit
+   */
+  private create7SegmentDigit(
+    digit: number,
+    x: number,
+    y: number,
+    z: number
+  ): void {
+    const segmentMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+    const offMaterial = new THREE.MeshLambertMaterial({ color: 0x003300 });
+
+    // Define which segments are on for each digit (top, topRight, bottomRight, bottom, bottomLeft, topLeft, middle)
+    const digitPatterns: boolean[][] = [
+      [true, true, true, true, true, true, false], // 0
+      [false, true, true, false, false, false, false], // 1
+      [true, true, false, true, true, false, true], // 2
+      [true, true, true, true, false, false, true], // 3
+      [false, true, true, false, false, true, true], // 4
+      [true, false, true, true, false, true, true], // 5
+      [true, false, true, true, true, true, true], // 6
+      [true, true, true, false, false, false, false], // 7
+      [true, true, true, true, true, true, true], // 8
+      [true, true, true, true, false, true, true], // 9
+    ];
+
+    const pattern = digitPatterns[digit];
+    const segmentSize = 0.15;
+    const segmentLength = 0.8;
+
+    // Segment positions and orientations
+    const segments = [
+      { pos: [0, 0.9, 0], size: [segmentLength, segmentSize, segmentSize] }, // top
+      { pos: [0.45, 0.45, 0], size: [segmentSize, segmentLength, segmentSize] }, // topRight
+      {
+        pos: [0.45, -0.45, 0],
+        size: [segmentSize, segmentLength, segmentSize],
+      }, // bottomRight
+      { pos: [0, -0.9, 0], size: [segmentLength, segmentSize, segmentSize] }, // bottom
+      {
+        pos: [-0.45, -0.45, 0],
+        size: [segmentSize, segmentLength, segmentSize],
+      }, // bottomLeft
+      {
+        pos: [-0.45, 0.45, 0],
+        size: [segmentSize, segmentLength, segmentSize],
+      }, // topLeft
+      { pos: [0, 0, 0], size: [segmentLength, segmentSize, segmentSize] }, // middle
+    ];
+
+    segments.forEach((segment, index) => {
+      const geometry = new THREE.BoxGeometry(
+        segment.size[0],
+        segment.size[1],
+        segment.size[2]
+      );
+      const material = pattern[index] ? segmentMaterial : offMaterial;
+      const segmentMesh = new THREE.Mesh(geometry, material);
+      segmentMesh.position.set(
+        x + segment.pos[0],
+        y + segment.pos[1],
+        z + segment.pos[2]
+      );
+      segmentMesh.userData = { isScore: true };
+      if (this.scoreboard) this.scoreboard.add(segmentMesh);
+    });
+  }
+
+  /**
+   * Create confetti particle system
+   */
+  private createConfetti(position: THREE.Vector3): void {
+    const particleCount = 200;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const velocities = new Float32Array(particleCount * 3);
+
+    // Create random confetti particles
+    for (let i = 0; i < particleCount; i++) {
+      const i3 = i * 3;
+
+      // Start position at goal
+      positions[i3] = position.x;
+      positions[i3 + 1] = position.y;
+      positions[i3 + 2] = position.z + (Math.random() - 0.5) * 8;
+
+      // Random bright colors
+      const color = new THREE.Color();
+      color.setHSL(Math.random(), 1.0, 0.5);
+      colors[i3] = color.r;
+      colors[i3 + 1] = color.g;
+      colors[i3 + 2] = color.b;
+
+      // Random velocities
+      velocities[i3] = (Math.random() - 0.5) * 20;
+      velocities[i3 + 1] = Math.random() * 20 + 10;
+      velocities[i3 + 2] = (Math.random() - 0.5) * 20;
+    }
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.3,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1.0,
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    particles.userData = {
+      velocities: velocities,
+      lifetime: 0,
+      maxLifetime: 3, // seconds
+    };
+
+    this.confettiParticles.push(particles);
+    this.scene.add(particles);
   }
 
   /**
@@ -147,6 +529,9 @@ class SoccerGame {
    */
   private createPlayer(teamType: TeamType): THREE.Mesh {
     const playerGroup = new THREE.Group();
+
+    // Field dimensions for positioning
+    const fieldLength = 115;
 
     // Common colors
     const skinColor = 0xfad8b0; // Light warm tan
@@ -366,7 +751,7 @@ class SoccerGame {
     // Create a container mesh for the player
     const playerMesh = new THREE.Mesh();
     playerMesh.add(playerGroup);
-    playerMesh.position.set(0, 0.5, 10);
+    playerMesh.position.set(-fieldLength / 4, 0.5, 0);
 
     // Store bone references for potential animation
     playerMesh.userData = {
@@ -404,14 +789,16 @@ class SoccerGame {
    */
   private setupControls(): void {
     document.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key in this.keys) {
-        this.keys[e.key as keyof typeof this.keys] = true;
+      const key = e.key === " " ? "Space" : e.key;
+      if (key in this.keys) {
+        this.keys[key as keyof typeof this.keys] = true;
       }
     });
 
     document.addEventListener("keyup", (e: KeyboardEvent) => {
-      if (e.key in this.keys) {
-        this.keys[e.key as keyof typeof this.keys] = false;
+      const key = e.key === " " ? "Space" : e.key;
+      if (key in this.keys) {
+        this.keys[key as keyof typeof this.keys] = false;
       }
     });
   }
@@ -430,7 +817,6 @@ class SoccerGame {
    */
   private update(deltaTime: number): void {
     const moveSpeed = 10 * deltaTime;
-    const jumpForce = 8;
 
     // Track if player is moving
     let isMoving = false;
@@ -457,11 +843,23 @@ class SoccerGame {
 
     // Update facing direction based on movement
     if (this.keys.ArrowUp && !this.keys.ArrowLeft && !this.keys.ArrowRight) {
-      this.player.rotation.y = 0;
+      this.player.rotation.y = -Math.PI / 2;
     }
     if (this.keys.ArrowDown && !this.keys.ArrowLeft && !this.keys.ArrowRight) {
-      this.player.rotation.y = Math.PI;
+      this.player.rotation.y = Math.PI / 2;
     }
+
+    // Keep player within field bounds
+    const fieldWidth = 75;
+    const fieldLength = 115;
+    this.player.position.x = Math.max(
+      -fieldLength / 2 + 1,
+      Math.min(fieldLength / 2 - 1, this.player.position.x)
+    );
+    this.player.position.z = Math.max(
+      -fieldWidth / 2 + 1,
+      Math.min(fieldWidth / 2 - 1, this.player.position.z)
+    );
 
     // Animate legs when moving
     if (isMoving && this.playerOnGround && this.player.userData) {
@@ -483,45 +881,18 @@ class SoccerGame {
       this.player.userData.bones.rightArm.rotation.x = 0;
     }
 
-    // Jump
-    if (this.keys.Space && this.playerOnGround) {
-      this.playerVelocity.y = jumpForce;
-      this.playerOnGround = false;
-    }
-
-    // Apply gravity
-    if (!this.playerOnGround) {
-      this.playerVelocity.y -= 20 * deltaTime; // Gravity
-      this.player.position.y += this.playerVelocity.y * deltaTime;
-
-      // Ground check
-      if (this.player.position.y <= 0.5) {
-        this.player.position.y = 0.5;
-        this.playerVelocity.y = 0;
-        this.playerOnGround = true;
-      }
-    }
-
-    // Shoot ball (basic implementation)
-    if (this.keys.b) {
+    // Shoot ball with Space
+    if (this.keys.Space) {
       // Calculate distance to ball
       const distance = this.player.position.distanceTo(this.ball.position);
 
       // If close enough to ball, kick it
       if (distance < 2) {
-        const direction = new THREE.Vector3();
-        direction.subVectors(this.ball.position, this.player.position);
-        direction.y = 0;
-        direction.normalize();
-
         // Apply force to ball in player's facing direction
-        const kickDirection = new THREE.Vector3(
-          -Math.sin(this.player.rotation.y),
-          0.3,
-          -Math.cos(this.player.rotation.y)
-        );
-
-        this.ball.position.add(kickDirection.multiplyScalar(moveSpeed * 2));
+        const kickPower = 30;
+        this.ballVelocity.x = -Math.sin(this.player.rotation.y) * kickPower;
+        this.ballVelocity.z = -Math.cos(this.player.rotation.y) * kickPower;
+        this.ballVelocity.y = 5; // Small upward kick
       }
     }
 
@@ -546,17 +917,137 @@ class SoccerGame {
       this.player.rotation.copy(currentRot);
     }
 
-    // Keep ball on ground (simple physics)
+    // Update ball physics
+    // Apply velocity
+    this.ball.position.add(this.ballVelocity.clone().multiplyScalar(deltaTime));
+
+    // Apply gravity to ball
     if (this.ball.position.y > 0.5) {
-      this.ball.position.y -= 10 * deltaTime;
+      this.ballVelocity.y -= 30 * deltaTime;
     } else {
+      // Ball on ground
       this.ball.position.y = 0.5;
+      if (this.ballVelocity.y < 0) {
+        this.ballVelocity.y = -this.ballVelocity.y * 0.7; // Bounce with energy loss
+        if (Math.abs(this.ballVelocity.y) < 1) {
+          this.ballVelocity.y = 0;
+        }
+      }
+
+      // Apply ground friction
+      this.ballVelocity.x *= 0.98;
+      this.ballVelocity.z *= 0.98;
     }
 
-    // Camera follow player
+    // Keep ball within field bounds (but allow entry into goal areas)
+    if (Math.abs(this.ball.position.x) > fieldLength / 2 - 1) {
+      // Check if ball is in goal area (within goal width)
+      const isInGoalArea = Math.abs(this.ball.position.z) <= 8; // Half of goal width (16/2 = 8)
+
+      if (!isInGoalArea) {
+        // Only bounce if not in goal area
+        this.ball.position.x =
+          Math.sign(this.ball.position.x) * (fieldLength / 2 - 1);
+        this.ballVelocity.x *= -0.8; // Bounce off side
+      }
+    }
+    if (Math.abs(this.ball.position.z) > fieldWidth / 2 - 1) {
+      this.ball.position.z =
+        Math.sign(this.ball.position.z) * (fieldWidth / 2 - 1);
+      this.ballVelocity.z *= -0.8; // Bounce off end
+    }
+
+    // Check for goals
+    this.goals.forEach((goal) => {
+      const goalBounds = {
+        minX: goal.position.x - 1,
+        maxX: goal.position.x + 1,
+        minY: 0,
+        maxY: 5.34, // Updated to match doubled goal height
+        minZ: goal.position.z - 8,
+        maxZ: goal.position.z + 8,
+      };
+
+      if (
+        this.ball.position.x > goalBounds.minX &&
+        this.ball.position.x < goalBounds.maxX &&
+        this.ball.position.y > goalBounds.minY &&
+        this.ball.position.y < goalBounds.maxY &&
+        this.ball.position.z > goalBounds.minZ &&
+        this.ball.position.z < goalBounds.maxZ
+      ) {
+        // Determine which team scored based on goal side
+        if (goal.userData.side === -1) {
+          // Ball went into left goal, away team scores
+          this.scores.away++;
+        } else {
+          // Ball went into right goal, home team scores
+          this.scores.home++;
+        }
+
+        // Update scoreboard display
+        this.updateScoreboard();
+
+        // Goal scored! Create confetti
+        this.createConfetti(new THREE.Vector3(goal.position.x, 4, 0));
+
+        // Reset ball to center
+        this.ball.position.set(0, 0.5, 0);
+        this.ballVelocity.set(0, 0, 0);
+
+        // Reset player position
+        this.player.position.set(-fieldLength / 4, 0.5, 0);
+      }
+    });
+
+    // Reset ball if it goes too far behind the goal
+    if (Math.abs(this.ball.position.x) > fieldLength / 2 + 5) {
+      this.ball.position.set(0, 0.5, 0);
+      this.ballVelocity.set(0, 0, 0);
+    }
+
+    // Update confetti particles
+    this.confettiParticles = this.confettiParticles.filter((particles) => {
+      const positions = particles.geometry.attributes.position
+        .array as Float32Array;
+      const velocities = particles.userData.velocities;
+      particles.userData.lifetime += deltaTime;
+
+      // Update particle positions
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i] += velocities[i] * deltaTime;
+        positions[i + 1] += velocities[i + 1] * deltaTime;
+        positions[i + 2] += velocities[i + 2] * deltaTime;
+
+        // Apply gravity
+        velocities[i + 1] -= 20 * deltaTime;
+      }
+
+      // Update opacity based on lifetime
+      const material = particles.material as THREE.PointsMaterial;
+      material.opacity = Math.max(
+        0,
+        1 - particles.userData.lifetime / particles.userData.maxLifetime
+      );
+
+      particles.geometry.attributes.position.needsUpdate = true;
+
+      // Remove old particles
+      if (particles.userData.lifetime > particles.userData.maxLifetime) {
+        this.scene.remove(particles);
+        particles.geometry.dispose();
+        material.dispose();
+        return false;
+      }
+
+      return true;
+    });
+
+    // Camera follow player from sideline (FIFA-style)
     this.camera.position.x = this.player.position.x;
-    this.camera.position.z = this.player.position.z + 20;
-    this.camera.lookAt(this.player.position);
+    this.camera.position.y = 25;
+    this.camera.position.z = 50;
+    this.camera.lookAt(this.player.position.x, 0, this.player.position.z);
 
     // Update lastKeys for next frame
     Object.assign(this.lastKeys, this.keys);
