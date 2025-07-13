@@ -86,6 +86,10 @@ interface Player {
   isFalling?: boolean;
   fallTime?: number;
   isOnGround?: boolean;
+  // Goalkeeper specific state
+  isDiving?: boolean;
+  diveTime?: number;
+  holdTime?: number;
 }
 
 /**
@@ -126,7 +130,7 @@ class SoccerGame {
   private ball: THREE.Mesh;
   private goals: THREE.Mesh[] = [];
   private confettiParticles: THREE.Points[] = [];
-  private goalkeepers: THREE.Mesh[] = [];
+  private goalkeepers: Player[] = [];
 
   // Referees
   private referees: Referee[] = [];
@@ -228,7 +232,6 @@ class SoccerGame {
     this.createField();
     this.createStadium();
     this.ball = this.createBall();
-    this.createGoalkeepers();
 
     // Set up controls
     this.setupControls();
@@ -382,6 +385,7 @@ class SoccerGame {
       this.scene.remove(player.mesh);
     });
     this.players = [];
+    this.goalkeepers = [];
 
     // Formation: 4-3-3
     const formations = {
@@ -415,8 +419,9 @@ class SoccerGame {
 
     // Create Sporting team
     formations[TeamType.SPORTING].forEach((info, index) => {
+      const role = info.pos === Position.GK ? PlayerRole.GOALKEEPER : PlayerRole.FIELD;
       const player: Player = {
-        mesh: this.createPlayer(TeamType.SPORTING),
+        mesh: this.createPlayer(TeamType.SPORTING, role),
         team: TeamType.SPORTING,
         position: info.pos,
         number: info.num,
@@ -424,12 +429,18 @@ class SoccerGame {
         velocity: new THREE.Vector3(),
         yellowCards: 0,
         redCard: false,
+        isDiving: false,
+        diveTime: 0,
+        holdTime: 0,
       };
 
       // Position for walkout (in tunnel)
       player.mesh.position.set(-80, 0, -30 + index * 3);
 
       this.players.push(player);
+      if (info.pos === Position.GK) {
+        this.goalkeepers.push(player);
+      }
 
       if (player.isHuman) {
         this.humanPlayer = player;
@@ -439,8 +450,9 @@ class SoccerGame {
 
     // Create Benfica team
     formations[TeamType.BENFICA].forEach((info, index) => {
+      const role = info.pos === Position.GK ? PlayerRole.GOALKEEPER : PlayerRole.FIELD;
       const player: Player = {
-        mesh: this.createPlayer(TeamType.BENFICA),
+        mesh: this.createPlayer(TeamType.BENFICA, role),
         team: TeamType.BENFICA,
         position: info.pos,
         number: info.num,
@@ -448,12 +460,18 @@ class SoccerGame {
         velocity: new THREE.Vector3(),
         yellowCards: 0,
         redCard: false,
+        isDiving: false,
+        diveTime: 0,
+        holdTime: 0,
       };
 
       // Position for walkout (in tunnel)
       player.mesh.position.set(-80, 0, 5 + index * 3);
 
       this.players.push(player);
+      if (info.pos === Position.GK) {
+        this.goalkeepers.push(player);
+      }
     });
   }
 
@@ -1600,20 +1618,7 @@ class SoccerGame {
     return ball;
   }
 
-  /** Create goalkeepers at each end of the field */
-  private createGoalkeepers(): void {
-    const fieldLength = 115;
 
-    const homeKeeper = this.createPlayer(TeamType.SPORTING, PlayerRole.GOALKEEPER);
-    homeKeeper.position.set(-fieldLength / 2 + 3, 0.5, 0);
-    homeKeeper.rotation.y = -Math.PI / 2;
-    this.goalkeepers.push(homeKeeper);
-
-    const awayKeeper = this.createPlayer(TeamType.BENFICA, PlayerRole.GOALKEEPER);
-    awayKeeper.position.set(fieldLength / 2 - 3, 0.5, 0);
-    awayKeeper.rotation.y = Math.PI / 2;
-    this.goalkeepers.push(awayKeeper);
-  }
 
   /**
    * Set up keyboard controls
@@ -2315,7 +2320,7 @@ class SoccerGame {
    */
   private updateAIPlayers(deltaTime: number): void {
     this.players.forEach((player) => {
-      if (player.isHuman || player.redCard) return;
+      if (player.isHuman || player.redCard || player.position === Position.GK) return;
 
       // Basic AI behavior based on difficulty
       const aiSpeed =
@@ -2387,6 +2392,77 @@ class SoccerGame {
           this.animatePlayerWalking(player, deltaTime);
         } else {
           this.resetPlayerAnimation(player);
+        }
+      }
+    });
+  }
+
+  /**
+   * Update goalkeeper behavior
+   */
+  private updateGoalkeepers(deltaTime: number): void {
+    const fieldLength = 115;
+    this.goalkeepers.forEach((keeper) => {
+      const goalX =
+        keeper.team === TeamType.SPORTING
+          ? -fieldLength / 2 + 3
+          : fieldLength / 2 - 3;
+
+      // Move laterally to track the ball
+      const targetZ = THREE.MathUtils.clamp(this.ball.position.z, -7, 7);
+      keeper.mesh.position.z += (targetZ - keeper.mesh.position.z) * 5 * deltaTime;
+
+      // Step out slightly when ball is near
+      const ballDistX = Math.abs(this.ball.position.x - goalX);
+      const outX = keeper.team === TeamType.SPORTING ? goalX + 1 : goalX - 1;
+      const targetX = ballDistX < 20 ? outX : goalX;
+      keeper.mesh.position.x += (targetX - keeper.mesh.position.x) * 3 * deltaTime;
+
+      // Dive for fast shots
+      const approaching =
+        (keeper.team === TeamType.SPORTING && this.ballVelocity.x < -8) ||
+        (keeper.team === TeamType.BENFICA && this.ballVelocity.x > 8);
+      if (!keeper.isDiving && approaching && ballDistX < 10) {
+        keeper.isDiving = true;
+        keeper.diveTime = 0;
+        const dir = this.ball.position.clone().sub(keeper.mesh.position);
+        dir.y = 0;
+        dir.normalize();
+        keeper.velocity.copy(dir.multiplyScalar(20));
+      }
+
+      if (keeper.isDiving) {
+        keeper.diveTime! += deltaTime;
+        keeper.mesh.position.x += keeper.velocity.x * deltaTime;
+        keeper.mesh.position.z += keeper.velocity.z * deltaTime;
+        keeper.mesh.rotation.z = keeper.team === TeamType.SPORTING ? 0.5 : -0.5;
+        if (keeper.diveTime! > 0.4) {
+          keeper.isDiving = false;
+          keeper.mesh.rotation.z = 0;
+        }
+      }
+
+      // Catch ball with hands
+      if (keeper.hasBall) {
+        keeper.holdTime! += deltaTime;
+        this.ball.position.set(
+          keeper.mesh.position.x,
+          keeper.mesh.position.y + 1,
+          keeper.mesh.position.z
+        );
+        this.ballVelocity.set(0, 0, 0);
+        if (keeper.holdTime! > 1) {
+          keeper.hasBall = false;
+          const dir = keeper.team === TeamType.SPORTING ? 1 : -1;
+          this.ballVelocity.set(dir * 15, 5, 0);
+        }
+      } else {
+        const dist = keeper.mesh.position.distanceTo(this.ball.position);
+        if (dist < 1.5 && this.ball.position.y < 2) {
+          keeper.hasBall = true;
+          keeper.holdTime = 0;
+          this.dribblingPlayer = null;
+          this.isDribbling = false;
         }
       }
     });
@@ -2494,6 +2570,9 @@ class SoccerGame {
     // Update AI players
     this.updateAIPlayers(deltaTime);
 
+    // Update goalkeepers
+    this.updateGoalkeepers(deltaTime);
+
     // Update referees
     this.updateReferees(deltaTime);
 
@@ -2569,17 +2648,6 @@ class SoccerGame {
       }
     }
 
-    // Basic collision with goalkeepers
-    this.goalkeepers.forEach((keeper) => {
-      const dist = keeper.position.distanceTo(this.ball.position);
-      if (dist < 1.5) {
-        const away = this.ball.position.clone().sub(keeper.position).setY(0).normalize();
-        this.ball.position.x = keeper.position.x + away.x * 1.5;
-        this.ball.position.z = keeper.position.z + away.z * 1.5;
-        this.ballVelocity.x = away.x * Math.abs(this.ballVelocity.x || 10);
-        this.ballVelocity.z = away.z * Math.abs(this.ballVelocity.z || 10);
-      }
-    });
 
     // Keep ball within field bounds (but allow entry into goal areas)
     if (Math.abs(this.ball.position.x) > fieldLength / 2 - 1) {
