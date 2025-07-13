@@ -2453,8 +2453,7 @@ class SoccerGame {
         this.ballVelocity.set(0, 0, 0);
         if (keeper.holdTime! > 1) {
           keeper.hasBall = false;
-          const dir = keeper.team === TeamType.SPORTING ? 1 : -1;
-          this.ballVelocity.set(dir * 15, 5, 0);
+          this.rollBallToTeammate(keeper);
         }
       } else {
         const dist = keeper.mesh.position.distanceTo(this.ball.position);
@@ -3166,6 +3165,43 @@ class SoccerGame {
           closestTeammate!.number
         }`
       );
+    }
+  }
+
+  /**
+   * Roll the ball to the nearest teammate
+   */
+  private rollBallToTeammate(keeper: Player): void {
+    let closest: Player | null = null;
+    let closestDist = Infinity;
+
+    this.players.forEach((player) => {
+      if (player === keeper || player.team !== keeper.team || player.redCard) return;
+
+      const dist = player.mesh.position.distanceTo(keeper.mesh.position);
+      if (dist < 30 && dist < closestDist) {
+        closest = player;
+        closestDist = dist;
+      }
+    });
+
+    if (closest) {
+      const dir = new THREE.Vector3();
+      dir.subVectors(closest.mesh.position, keeper.mesh.position);
+      dir.y = 0;
+      dir.normalize();
+
+      const power = Math.min(closestDist * 1.2, 12);
+
+      this.ball.position.set(keeper.mesh.position.x, 0.5, keeper.mesh.position.z);
+      this.ballVelocity.set(dir.x * power, 0, dir.z * power);
+
+      this.isDribbling = false;
+      this.dribblingPlayer = null;
+    } else {
+      const dir = keeper.team === TeamType.SPORTING ? 1 : -1;
+      this.ball.position.set(keeper.mesh.position.x, 0.5, keeper.mesh.position.z);
+      this.ballVelocity.set(dir * 10, 0, 0);
     }
   }
 
