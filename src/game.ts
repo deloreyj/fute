@@ -92,6 +92,8 @@ interface Player {
   holdTime?: number;
   /** Prevent immediate recapture after releasing the ball */
   releaseCooldown?: number;
+  /** Time when the keeper last passed to this player */
+  recentKeeperPass?: number;
 }
 
 /**
@@ -3193,8 +3195,18 @@ class SoccerGame {
       -Math.cos(passer.mesh.rotation.y)
     );
 
+    const now = performance.now();
+
     this.players.forEach((player) => {
       if (player === passer || player.team !== passer.team || player.redCard)
+        return;
+
+      // Avoid immediately returning the ball to the keeper after receiving it
+      if (
+        player.position === Position.GK &&
+        passer.recentKeeperPass &&
+        now - passer.recentKeeperPass < 2000
+      )
         return;
 
       // Get direction to teammate
@@ -3276,6 +3288,9 @@ class SoccerGame {
 
       this.isDribbling = false;
       this.dribblingPlayer = null;
+
+      // Remember that this player just received a pass from the keeper
+      closest.recentKeeperPass = performance.now();
     } else {
       const dir = keeper.team === TeamType.SPORTING ? 1 : -1;
       this.ball.position.set(keeper.mesh.position.x, 0.5, keeper.mesh.position.z);
