@@ -134,6 +134,8 @@ class SoccerGame {
   // UI elements
   private menuContainer: HTMLDivElement | null = null;
   private touchControlsContainer: HTMLDivElement | null = null;
+  private passBubble: HTMLDivElement | null = null;
+  private passBubbleTimer = 0;
 
   // Movement state
   private keys = {
@@ -228,6 +230,19 @@ class SoccerGame {
     const container = document.getElementById("game-container");
     if (container) {
       container.appendChild(this.renderer.domElement);
+      // Create pass speech bubble element
+      this.passBubble = document.createElement("div");
+      this.passBubble.textContent = "pass!";
+      this.passBubble.style.position = "absolute";
+      this.passBubble.style.padding = "4px 6px";
+      this.passBubble.style.background = "rgba(255,255,255,0.9)";
+      this.passBubble.style.color = "#000";
+      this.passBubble.style.borderRadius = "4px";
+      this.passBubble.style.fontSize = "14px";
+      this.passBubble.style.pointerEvents = "none";
+      this.passBubble.style.transform = "translate(-50%, -100%)";
+      this.passBubble.style.display = "none";
+      container.appendChild(this.passBubble);
     }
 
     // Time display element
@@ -2152,6 +2167,14 @@ class SoccerGame {
   }
 
   /**
+   * Display a speech bubble above the human player when passing
+   */
+  private showPassBubble(): void {
+    if (!this.passBubble) return;
+    this.passBubbleTimer = 1;
+  }
+
+  /**
    * Update walkout animation
    */
   private updateWalkout(deltaTime: number): void {
@@ -2310,13 +2333,17 @@ class SoccerGame {
       if (distance < 2.5) {
         this.passBall(this.humanPlayer);
         this.playKickSound();
-      } else if (
-        this.dribblingPlayer &&
-        !this.dribblingPlayer.isHuman &&
-        this.dribblingPlayer.team === this.humanPlayer.team
-      ) {
-        this.passBallToPlayer(this.dribblingPlayer, this.humanPlayer);
-        this.playKickSound();
+      } else {
+        // Request a pass from a teammate
+        this.showPassBubble();
+        if (
+          this.dribblingPlayer &&
+          !this.dribblingPlayer.isHuman &&
+          this.dribblingPlayer.team === this.humanPlayer.team
+        ) {
+          this.passBallToPlayer(this.dribblingPlayer, this.humanPlayer);
+          this.playKickSound();
+        }
       }
     }
 
@@ -2903,6 +2930,21 @@ class SoccerGame {
           if (effect.material) (effect.material as THREE.Material).dispose();
         });
         this.celebrationEffects = [];
+      }
+    }
+
+    if (this.passBubbleTimer > 0 && this.humanPlayer && this.passBubble) {
+      this.passBubbleTimer -= deltaTime;
+      const pos = this.humanPlayer.mesh.position.clone();
+      pos.y += 3;
+      pos.project(this.camera);
+      const x = ((pos.x + 1) / 2) * window.innerWidth;
+      const y = ((-pos.y + 1) / 2) * window.innerHeight;
+      this.passBubble.style.left = `${x}px`;
+      this.passBubble.style.top = `${y}px`;
+      this.passBubble.style.display = "block";
+      if (this.passBubbleTimer <= 0) {
+        this.passBubble.style.display = "none";
       }
     }
 
