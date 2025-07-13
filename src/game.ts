@@ -82,6 +82,7 @@ interface Player {
   lastFoulTime?: number;
   isTackling?: boolean;
   tackleTime?: number;
+  tackleTouchedBall?: boolean;
   isFalling?: boolean;
   fallTime?: number;
   isOnGround?: boolean;
@@ -2908,53 +2909,24 @@ class SoccerGame {
   private checkForFouls(): void {
     if (this.foulCooldown > 0 || this.showingCard) return;
 
-    // Check collisions between players
-    for (let i = 0; i < this.players.length; i++) {
-      const player1 = this.players[i];
-      if (player1.redCard) continue;
+    this.players.forEach((offender) => {
+      if (!offender.isTackling || offender.tackleTouchedBall || offender.redCard)
+        return;
 
-      for (let j = i + 1; j < this.players.length; j++) {
-        const player2 = this.players[j];
-        if (player2.redCard) continue;
+      this.players.forEach((victim) => {
+        if (
+          victim === offender ||
+          victim.team === offender.team ||
+          victim.redCard
+        )
+          return;
 
-        // Skip if same team
-        if (player1.team === player2.team) continue;
-
-        const distance = player1.mesh.position.distanceTo(
-          player2.mesh.position
-        );
-
-        // Check for collision
-        if (distance < 1.5) {
-          // Determine if it's a foul based on various factors
-          const ballDistance1 = player1.mesh.position.distanceTo(
-            this.ball.position
-          );
-          const ballDistance2 = player2.mesh.position.distanceTo(
-            this.ball.position
-          );
-
-          // Player closer to ball is more likely the victim
-          const offender = ballDistance1 > ballDistance2 ? player1 : player2;
-          const victim = ballDistance1 > ballDistance2 ? player2 : player1;
-
-          // Random chance of foul (based on difficulty)
-          const foulChance =
-            this.difficulty === Difficulty.EASY
-              ? 0.01
-              : this.difficulty === Difficulty.MEDIUM
-              ? 0.02
-              : 0.03;
-
-          if (Math.random() < foulChance) {
-            // Determine severity
-            const severity = Math.random();
-
-            this.commitFoul(offender, victim, severity);
-          }
+        const distance = offender.mesh.position.distanceTo(victim.mesh.position);
+        if (distance < 1.2 && this.dribblingPlayer === victim) {
+          this.commitFoul(offender, victim, Math.random());
         }
-      }
-    }
+      });
+    });
   }
 
   /**
@@ -3137,6 +3109,7 @@ class SoccerGame {
 
     tackler.isTackling = true;
     tackler.tackleTime = 0;
+    tackler.tackleTouchedBall = false;
 
     // Lunge forward
     const tackleSpeed = 15;
@@ -3173,6 +3146,7 @@ class SoccerGame {
           player.velocity.x *= 0.9;
           player.velocity.z *= 0.9;
 
+
           // Check for ball contact during tackle
           const ballDistance = player.mesh.position.distanceTo(
             this.ball.position
@@ -3191,6 +3165,8 @@ class SoccerGame {
             this.ballVelocity.x = knockDir.x * 15;
             this.ballVelocity.z = knockDir.z * 15;
             this.ballVelocity.y = 5;
+
+            player.tackleTouchedBall = true;
 
             // Make the victim fall
             if (this.dribblingPlayer) {
@@ -3265,24 +3241,33 @@ class SoccerGame {
 
         // Higher speed = more likely to succeed
         if (relativeSpeed > 2 || Math.random() < 0.3) {
-          // Successful tackle
-          const knockDir = new THREE.Vector3();
-          knockDir.randomDirection();
-          knockDir.y = 0;
-          knockDir.normalize();
+          const playerBallDist = player.mesh.position.distanceTo(
+            this.ball.position
+          );
 
-          this.ballVelocity.x = knockDir.x * 10;
-          this.ballVelocity.z = knockDir.z * 10;
-          this.ballVelocity.y = 3;
+          if (playerBallDist > 1.5) {
+            // Hit opponent before the ball - foul
+            this.commitFoul(player, ballCarrier, Math.random());
+          } else {
+            // Successful tackle
+            const knockDir = new THREE.Vector3();
+            knockDir.randomDirection();
+            knockDir.y = 0;
+            knockDir.normalize();
 
-          // Victim falls
-          ballCarrier.isFalling = true;
-          ballCarrier.fallTime = 0;
+            this.ballVelocity.x = knockDir.x * 10;
+            this.ballVelocity.z = knockDir.z * 10;
+            this.ballVelocity.y = 3;
 
-          this.dribblingPlayer = null;
-          this.isDribbling = false;
+            // Victim falls
+            ballCarrier.isFalling = true;
+            ballCarrier.fallTime = 0;
 
-          console.log(`Running tackle by ${player.team} #${player.number}`);
+            this.dribblingPlayer = null;
+            this.isDribbling = false;
+
+            console.log(`Running tackle by ${player.team} #${player.number}`);
+          }
         }
       }
     });
