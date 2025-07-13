@@ -2454,13 +2454,14 @@ class SoccerGame {
         if (keeper.holdTime! > 1) {
           keeper.hasBall = false;
           this.rollBallToTeammate(keeper);
+          this.dribblingPlayer = null;
         }
       } else {
         const dist = keeper.mesh.position.distanceTo(this.ball.position);
         if (dist < 1.5 && this.ball.position.y < 2) {
           keeper.hasBall = true;
           keeper.holdTime = 0;
-          this.dribblingPlayer = null;
+          this.dribblingPlayer = keeper;
           this.isDribbling = false;
         }
       }
@@ -3176,7 +3177,13 @@ class SoccerGame {
     let closestDist = Infinity;
 
     this.players.forEach((player) => {
-      if (player === keeper || player.team !== keeper.team || player.redCard) return;
+      if (
+        player === keeper ||
+        player.team !== keeper.team ||
+        player.redCard ||
+        player.position === Position.GK
+      )
+        return;
 
       const dist = player.mesh.position.distanceTo(keeper.mesh.position);
       if (dist < 30 && dist < closestDist) {
