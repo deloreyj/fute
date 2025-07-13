@@ -211,6 +211,11 @@ class SoccerGame {
   private penaltyShootout = false;
   private penaltyScores = { home: 0, away: 0, shots: 0 };
 
+  // Free kick state
+  private freeKickActive = false;
+  private freeKickPlayer: Player | null = null;
+  private freeKickTimer = 0;
+
   constructor() {
     // Initialize Three.js scene
     this.scene = new THREE.Scene();
@@ -2290,6 +2295,12 @@ class SoccerGame {
   private updateHumanPlayer(deltaTime: number, moveSpeed: number): void {
     if (!this.humanPlayer) return;
 
+    // Freeze player if a free kick is in progress and they are not the taker
+    if (this.freeKickActive && this.humanPlayer !== this.freeKickPlayer) {
+      this.resetPlayerAnimation(this.humanPlayer);
+      return;
+    }
+
     let isMoving = false;
 
     // Player movement
@@ -2343,6 +2354,11 @@ class SoccerGame {
         this.isDribbling = false;
         this.dribblingPlayer = null;
         this.playKickSound();
+        if (this.freeKickActive && this.freeKickPlayer === this.humanPlayer) {
+          this.freeKickActive = false;
+          this.freeKickPlayer = null;
+          this.freeKickTimer = 0;
+        }
       }
     }
 
@@ -2354,6 +2370,11 @@ class SoccerGame {
       if (distance < 2.5) {
         this.passBall(this.humanPlayer);
         this.playKickSound();
+        if (this.freeKickActive && this.freeKickPlayer === this.humanPlayer) {
+          this.freeKickActive = false;
+          this.freeKickPlayer = null;
+          this.freeKickTimer = 0;
+        }
       }
     }
 
@@ -2372,6 +2393,25 @@ class SoccerGame {
   private updateAIPlayers(deltaTime: number): void {
     this.players.forEach((player) => {
       if (player.isHuman || player.redCard || player.position === Position.GK) return;
+
+      // Freeze non-takers during a free kick
+      if (this.freeKickActive && player !== this.freeKickPlayer) {
+        this.resetPlayerAnimation(player);
+        return;
+      }
+
+      if (this.freeKickActive && player === this.freeKickPlayer) {
+        // Wait briefly then take the kick
+        this.freeKickTimer += deltaTime;
+        if (this.freeKickTimer > 1 && this.ballVelocity.length() === 0) {
+          this.passBall(player);
+          this.playKickSound();
+          this.freeKickActive = false;
+          this.freeKickPlayer = null;
+          this.freeKickTimer = 0;
+        }
+        return;
+      }
 
       // Basic AI behavior based on difficulty
       const aiSpeed =
@@ -2454,6 +2494,10 @@ class SoccerGame {
   private updateGoalkeepers(deltaTime: number): void {
     const fieldLength = 115;
     this.goalkeepers.forEach((keeper) => {
+      if (this.freeKickActive) {
+        this.resetPlayerAnimation(keeper);
+        return;
+      }
       if (keeper.releaseCooldown && keeper.releaseCooldown > 0) {
         keeper.releaseCooldown -= deltaTime;
       }
@@ -2625,7 +2669,7 @@ class SoccerGame {
       return;
     }
 
-    if (!this.penaltyShootout) {
+    if (!this.penaltyShootout && !this.freeKickActive) {
       this.gameClock += deltaTime;
       if (this.gameClock >= this.halfDuration) {
         this.endHalf();
@@ -2672,7 +2716,7 @@ class SoccerGame {
     });
 
     // Team switching for human player
-    if (this.keys.t && !this.lastKeys.t && this.humanPlayer) {
+    if (this.keys.t && !this.lastKeys.t && this.humanPlayer && !this.freeKickActive) {
       // Toggle team
       this.currentTeam =
         this.currentTeam === TeamType.SPORTING
@@ -3046,7 +3090,7 @@ class SoccerGame {
    * Check for fouls
    */
   private checkForFouls(): void {
-    if (this.foulCooldown > 0 || this.showingCard) return;
+    if (this.foulCooldown > 0 || this.showingCard || this.freeKickActive) return;
 
     this.players.forEach((offender) => {
       if (!offender.isTackling || offender.tackleTouchedBall || offender.redCard)
@@ -3108,6 +3152,13 @@ class SoccerGame {
 
     // Play whistle sound
     this.playWhistleSound();
+
+    // Set up free kick for the fouled player
+    this.freeKickActive = true;
+    this.freeKickPlayer = victim;
+    this.freeKickTimer = 0;
+    this.isDribbling = false;
+    this.dribblingPlayer = null;
   }
 
   /**
@@ -3315,6 +3366,7 @@ class SoccerGame {
    * Update tackle mechanics
    */
   private updateTackles(deltaTime: number): void {
+    if (this.freeKickActive) return;
     this.players.forEach((player) => {
       // Update sliding tackle
       if (player.isTackling) {
@@ -3394,6 +3446,7 @@ class SoccerGame {
    * Check for running tackles (collision-based tackles)
    */
   private checkRunningTackles(): void {
+    if (this.freeKickActive) return;
     // Check each player against the ball carrier
     if (!this.dribblingPlayer) return;
 
