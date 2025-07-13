@@ -75,6 +75,13 @@ class SoccerGame {
   };
   private scoreboard: THREE.Group | null = null;
 
+  // Game timing
+  private gameTime = 0;
+  private readonly halfDuration = 60; // seconds
+  private currentHalf = 1;
+  private timerElement: HTMLElement | null = null;
+  private gameEnded = false;
+
   constructor() {
     // Initialize Three.js scene
     this.scene = new THREE.Scene();
@@ -104,6 +111,9 @@ class SoccerGame {
       container.appendChild(this.renderer.domElement);
     }
 
+    // Timer element for displaying game time
+    this.timerElement = document.getElementById("timer");
+
     // Initialize game objects
     this.setupLighting();
     this.createField();
@@ -124,6 +134,10 @@ class SoccerGame {
     window.addEventListener("touchstart", () => this.initAudio(), {
       once: true,
     });
+
+    if (this.timerElement) {
+      this.timerElement.textContent = "Half 1 1:00";
+    }
 
     // Start game loop
     this.animate();
@@ -1539,9 +1553,83 @@ class SoccerGame {
   }
 
   /**
+   * End the game and display the final score
+   */
+  private endGame(): void {
+    if (this.timerElement) {
+      const winner =
+        this.scores.home > this.scores.away ? "Home" : "Away";
+      this.timerElement.textContent = `Final: ${this.scores.home}-${this.scores.away} ${winner} wins`;
+    }
+  }
+
+  /**
+   * Simulate a penalty shootout if the match is tied
+   */
+  private startPenalties(): void {
+    const successRate = 0.7;
+    let home = 0;
+    let away = 0;
+    for (let i = 0; i < 5; i++) {
+      if (Math.random() < successRate) home++;
+      if (Math.random() < successRate) away++;
+    }
+    while (home === away) {
+      if (Math.random() < successRate) home++;
+      if (Math.random() < successRate) away++;
+    }
+    this.scores.home = home;
+    this.scores.away = away;
+    this.updateCornerDisplay();
+    if (this.timerElement) {
+      const winner = home > away ? "Home" : "Away";
+      this.timerElement.textContent = `Penalties: ${home}-${away} ${winner} wins`;
+    }
+  }
+
+  /**
    * Update game logic
    */
   private update(deltaTime: number): void {
+    if (this.gameEnded) return;
+
+    // Update game timer
+    this.gameTime += deltaTime;
+    if (this.timerElement) {
+      const remaining = Math.max(0, this.halfDuration - this.gameTime);
+      const minutes = Math.floor(remaining / 60)
+        .toString()
+        .padStart(1, "0");
+      const seconds = Math.floor(remaining % 60)
+        .toString()
+        .padStart(2, "0");
+      this.timerElement.textContent = `Half ${this.currentHalf} ${minutes}:${seconds}`;
+    }
+
+    if (this.gameTime >= this.halfDuration) {
+      if (this.currentHalf === 1) {
+        this.currentHalf = 2;
+        this.gameTime = 0;
+        if (this.timerElement) {
+          this.timerElement.textContent = "Half 2 1:00";
+        }
+        // Reset positions for second half
+        const fieldLength = 115;
+        this.ball.position.set(0, 0.5, 0);
+        this.ballVelocity.set(0, 0, 0);
+        this.isDribbling = false;
+        this.player.position.set(-fieldLength / 4, 0.5, 0);
+      } else {
+        if (this.scores.home === this.scores.away) {
+          this.startPenalties();
+        } else {
+          this.endGame();
+        }
+        this.gameEnded = true;
+        return;
+      }
+    }
+
     const moveSpeed = 15 * deltaTime; // Increased from 10 to 15
 
     // Update animation time
