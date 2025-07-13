@@ -199,6 +199,7 @@ class SoccerGame {
   private currentHalf = 1;
   private gameClock = 0;
   private timeDisplay: HTMLDivElement | null = null;
+  private isPaused = false;
 
   // Penalty shootout
   private penaltyShootout = false;
@@ -237,6 +238,17 @@ class SoccerGame {
     this.timeDisplay = document.getElementById(
       "time-display"
     ) as HTMLDivElement | null;
+
+    // Pause button
+    const pauseButton = document.getElementById(
+      "pause-button"
+    ) as HTMLButtonElement | null;
+    if (pauseButton) {
+      pauseButton.addEventListener("click", () => {
+        this.isPaused = !this.isPaused;
+        pauseButton.textContent = this.isPaused ? "Resume" : "Pause";
+      });
+    }
 
     // Initialize scene objects (but don't create players yet)
     this.setupLighting();
@@ -2518,6 +2530,10 @@ class SoccerGame {
 
     // Only update game when playing
     if (this.gameState !== GameState.PLAYING) {
+      return;
+    }
+
+    if (this.isPaused) {
       return;
     }
 
