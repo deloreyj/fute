@@ -2401,6 +2401,9 @@ class SoccerGame {
           this.resetPlayerAnimation(player);
         }
       }
+
+      // Handle dribbling logic for AI players
+      this.updateDribbling(player, deltaTime);
     });
   }
 
@@ -2498,6 +2501,13 @@ class SoccerGame {
       this.dribblingPlayer = player;
       this.dribbleOffset.subVectors(this.ball.position, player.mesh.position);
       this.dribbleOffset.y = 0;
+
+      // Ensure AI players face the opponent goal when gaining control
+      if (!player.isHuman) {
+        const goalDir =
+          player.team === TeamType.SPORTING ? -Math.PI / 2 : Math.PI / 2;
+        player.mesh.rotation.y = goalDir;
+      }
     }
 
     // Continue dribbling
