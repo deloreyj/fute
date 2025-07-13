@@ -2735,6 +2735,9 @@ class SoccerGame {
         // Update scoreboard display
         this.updateCornerDisplay();
 
+        // Check for win condition
+        this.checkGoalLimit();
+
         // Trigger fan celebration
         this.startCelebration();
 
@@ -3336,6 +3339,14 @@ class SoccerGame {
         }
       }
     });
+  }
+
+  /** End the game if a team scores 12 goals */
+  private checkGoalLimit(): void {
+    if (this.scores.home >= 12 || this.scores.away >= 12) {
+      if (this.timeDisplay) this.timeDisplay.textContent = "YOU WIN!!!!";
+      this.gameState = GameState.MENU;
+    }
   }
 
   /** End the current half or finish the match */
