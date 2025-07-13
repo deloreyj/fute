@@ -28,6 +28,12 @@
                         border-radius: 5px;
                 }
 
+                #pause-button {
+                        margin-top: 5px;
+                        padding: 4px 8px;
+                        cursor: pointer;
+                }
+
                 #time-display {
                         position: absolute;
                         top: 10px;
@@ -46,6 +52,7 @@
         <div id="controls">
                 <p>Arrow Keys: Move • Run into ball: Dribble • Space: Shoot • T: Switch Team</p>
                 <p style="font-size: 12px; margin-top: 5px;">🔊 Click or press any key to enable sound</p>
+                <button id="pause-button">Pause</button>
         </div>
         <div id="time-display"></div>
         <script type="module" src="/game.js"></script>
