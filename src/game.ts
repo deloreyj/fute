@@ -134,6 +134,7 @@ class SoccerGame {
   // UI elements
   private menuContainer: HTMLDivElement | null = null;
   private touchControlsContainer: HTMLDivElement | null = null;
+  private endContainer: HTMLDivElement | null = null;
   private passBubble: HTMLDivElement | null = null;
   private passBubbleTimer = 0;
 
@@ -294,6 +295,9 @@ class SoccerGame {
   private showMenu(): void {
     // Hide the game canvas initially
     this.renderer.domElement.style.opacity = "0.3";
+    if (this.touchControlsContainer) {
+      this.touchControlsContainer.style.display = "none";
+    }
 
     // Create menu container
     this.menuContainer = document.createElement("div");
@@ -392,6 +396,10 @@ class SoccerGame {
       this.menuContainer.remove();
       this.menuContainer = null;
     }
+    if (this.endContainer) {
+      this.endContainer.remove();
+      this.endContainer = null;
+    }
 
     // Show game canvas
     this.renderer.domElement.style.opacity = "1";
@@ -416,6 +424,75 @@ class SoccerGame {
     // Start walkout animation
     this.gameState = GameState.WALKOUT;
     this.walkoutTime = 0;
+  }
+
+  /** Show options after the match ends */
+  private showEndOptions(): void {
+    if (this.endContainer) {
+      this.endContainer.remove();
+    }
+    if (this.touchControlsContainer) {
+      this.touchControlsContainer.style.display = "none";
+    }
+    this.endContainer = document.createElement("div");
+    this.endContainer.style.position = "fixed";
+    this.endContainer.style.top = "50%";
+    this.endContainer.style.left = "50%";
+    this.endContainer.style.transform = "translate(-50%, -50%)";
+    this.endContainer.style.textAlign = "center";
+    this.endContainer.style.color = "white";
+    this.endContainer.style.fontFamily = "Arial, sans-serif";
+    this.endContainer.style.zIndex = "1000";
+
+    const restart = document.createElement("button");
+    restart.textContent = "🔄 Restart";
+    const exit = document.createElement("button");
+    exit.textContent = "↩️ Exit to Title";
+
+    const styleBtn = (btn: HTMLButtonElement) => {
+      btn.style.display = "block";
+      btn.style.margin = "10px auto";
+      btn.style.padding = "15px 40px";
+      btn.style.fontSize = "20px";
+      btn.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+      btn.style.color = "white";
+      btn.style.border = "2px solid white";
+      btn.style.borderRadius = "10px";
+      btn.style.cursor = "pointer";
+      btn.style.transition = "all 0.3s";
+      btn.style.width = "300px";
+      btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "rgba(255, 255, 255, 0.4)";
+        btn.style.transform = "scale(1.05)";
+      });
+      btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+        btn.style.transform = "scale(1)";
+      });
+    };
+
+    styleBtn(restart);
+    styleBtn(exit);
+
+    restart.addEventListener("click", () => {
+      if (this.endContainer) {
+        this.endContainer.remove();
+        this.endContainer = null;
+      }
+      this.startMatch();
+    });
+
+    exit.addEventListener("click", () => {
+      if (this.endContainer) {
+        this.endContainer.remove();
+        this.endContainer = null;
+      }
+      this.showMenu();
+    });
+
+    this.endContainer.appendChild(restart);
+    this.endContainer.appendChild(exit);
+    document.body.appendChild(this.endContainer);
   }
 
   /**
@@ -3421,6 +3498,7 @@ class SoccerGame {
     if (this.scores.home >= 12 || this.scores.away >= 12) {
       if (this.timeDisplay) this.timeDisplay.textContent = "YOU WIN!!!!";
       this.gameState = GameState.MENU;
+      this.showEndOptions();
     }
   }
 
@@ -3449,6 +3527,7 @@ class SoccerGame {
           ? "YOU WIN!!!!!! :)"
           : "aww you lost :( try again";
       this.gameState = GameState.MENU;
+      this.showEndOptions();
     }
   }
 
@@ -3492,6 +3571,7 @@ class SoccerGame {
         ? "YOU WIN!!!!!! :)"
         : "aww you lost :( try again";
     this.gameState = GameState.MENU;
+    this.showEndOptions();
   }
 }
 
