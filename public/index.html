@@ -13,10 +13,23 @@
                         font-family: Arial, sans-serif;
                 }
 
-		#game-container {
-			width: 100vw;
-			height: 100vh;
-		}
+                /* Prevent accidental text selection on mobile */
+                body,
+                * {
+                        -webkit-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                        user-select: none;
+                }
+
+                #game-container {
+                        width: 100vw;
+                        height: 100vh;
+                        -webkit-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                        user-select: none;
+                }
 
                 #settings-button {
                         position: absolute;

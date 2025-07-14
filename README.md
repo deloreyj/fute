@@ -52,7 +52,7 @@ Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting C
 #### On Your Phone
 
 ```
-👆 Virtual D-pad for them sick moves
+👆 Virtual Joystick for them sick moves
 👆 Big ol' SHOOT button
 👆 PASS button for sweet assists
 👆 TACKLE button to stop opponents
