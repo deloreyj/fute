@@ -431,6 +431,7 @@ class SoccerGame {
     if (this.endContainer) {
       this.endContainer.remove();
     }
+
     if (this.touchControlsContainer) {
       this.touchControlsContainer.style.display = "none";
     }
