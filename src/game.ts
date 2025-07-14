@@ -135,6 +135,8 @@ class SoccerGame {
   private menuContainer: HTMLDivElement | null = null;
   private touchControlsContainer: HTMLDivElement | null = null;
   private endContainer: HTMLDivElement | null = null;
+  private passBubble: HTMLDivElement | null = null;
+  private passBubbleTimer = 0;
 
   // Movement state
   private keys = {
@@ -229,6 +231,19 @@ class SoccerGame {
     const container = document.getElementById("game-container");
     if (container) {
       container.appendChild(this.renderer.domElement);
+      // Create pass speech bubble element
+      this.passBubble = document.createElement("div");
+      this.passBubble.textContent = "pass!";
+      this.passBubble.style.position = "absolute";
+      this.passBubble.style.padding = "4px 6px";
+      this.passBubble.style.background = "rgba(255,255,255,0.9)";
+      this.passBubble.style.color = "#000";
+      this.passBubble.style.borderRadius = "4px";
+      this.passBubble.style.fontSize = "14px";
+      this.passBubble.style.pointerEvents = "none";
+      this.passBubble.style.transform = "translate(-50%, -100%)";
+      this.passBubble.style.display = "none";
+      container.appendChild(this.passBubble);
     }
 
     // Time display element
@@ -1743,81 +1758,84 @@ class SoccerGame {
     document.body.appendChild(controlsContainer);
     this.touchControlsContainer = controlsContainer;
 
-    // Create d-pad container
-    const dpadContainer = document.createElement("div");
-    dpadContainer.style.position = "absolute";
-    dpadContainer.style.bottom = "20px";
-    dpadContainer.style.left = "20px";
-    dpadContainer.style.width = "150px";
-    dpadContainer.style.height = "150px";
-    dpadContainer.style.pointerEvents = "auto";
-    controlsContainer.appendChild(dpadContainer);
+    // Create joystick container
+    const joystickContainer = document.createElement("div");
+    joystickContainer.style.position = "absolute";
+    joystickContainer.style.bottom = "20px";
+    joystickContainer.style.left = "20px";
+    joystickContainer.style.width = "150px";
+    joystickContainer.style.height = "150px";
+    joystickContainer.style.pointerEvents = "auto";
+    controlsContainer.appendChild(joystickContainer);
 
-    // Create arrow buttons
-    const createArrowButton = (
-      direction: "up" | "down" | "left" | "right",
-      x: string,
-      y: string,
-      rotation: number
-    ) => {
-      const button = document.createElement("button");
-      button.style.position = "absolute";
-      button.style.left = x;
-      button.style.top = y;
-      button.style.width = "50px";
-      button.style.height = "50px";
-      button.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
-      button.style.border = "2px solid rgba(255, 255, 255, 0.5)";
-      button.style.borderRadius = "8px";
-      button.style.cursor = "pointer";
-      button.style.transform = `rotate(${rotation}deg)`;
-      button.style.display = "flex";
-      button.style.alignItems = "center";
-      button.style.justifyContent = "center";
-      button.style.fontSize = "24px";
-      button.style.color = "rgba(255, 255, 255, 0.8)";
-      button.style.userSelect = "none";
-      button.style.webkitUserSelect = "none";
-      button.style.touchAction = "none";
-      button.innerHTML = "▲";
+    // Joystick base
+    const joystickBase = document.createElement("div");
+    joystickBase.style.position = "absolute";
+    joystickBase.style.width = "100%";
+    joystickBase.style.height = "100%";
+    joystickBase.style.borderRadius = "50%";
+    joystickBase.style.backgroundColor = "rgba(255, 255, 255, 0.15)";
+    joystickContainer.appendChild(joystickBase);
 
-      // Map direction to key
-      const keyMap = {
-        up: "ArrowUp",
-        down: "ArrowDown",
-        left: "ArrowLeft",
-        right: "ArrowRight",
-      };
+    // Joystick knob
+    const joystickKnob = document.createElement("div");
+    joystickKnob.style.position = "absolute";
+    joystickKnob.style.left = "50%";
+    joystickKnob.style.top = "50%";
+    joystickKnob.style.width = "60px";
+    joystickKnob.style.height = "60px";
+    joystickKnob.style.marginLeft = "-30px";
+    joystickKnob.style.marginTop = "-30px";
+    joystickKnob.style.borderRadius = "50%";
+    joystickKnob.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
+    joystickKnob.style.border = "2px solid rgba(255, 255, 255, 0.5)";
+    joystickKnob.style.touchAction = "none";
+    joystickKnob.style.pointerEvents = "none";
+    joystickContainer.appendChild(joystickKnob);
 
-      const key = keyMap[direction] as keyof typeof this.keys;
+    let joystickCenter = { x: 0, y: 0 };
+    const deadZone = 20;
 
-      // Touch events
-      button.addEventListener("touchstart", (e) => {
-        e.preventDefault();
-        this.keys[key] = true;
-        button.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
-      });
-
-      button.addEventListener("touchend", (e) => {
-        e.preventDefault();
-        this.keys[key] = false;
-        button.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
-      });
-
-      button.addEventListener("touchcancel", (e) => {
-        e.preventDefault();
-        this.keys[key] = false;
-        button.style.backgroundColor = "rgba(255, 255, 255, 0.3)";
-      });
-
-      return button;
+    const updateMovement = (touch: Touch) => {
+      const dx = touch.clientX - joystickCenter.x;
+      const dy = touch.clientY - joystickCenter.y;
+      const clamp = (v: number) => Math.max(-40, Math.min(40, v));
+      joystickKnob.style.transform = `translate(${clamp(dx)}px, ${clamp(dy)}px)`;
+      this.keys.ArrowUp = dy < -deadZone;
+      this.keys.ArrowDown = dy > deadZone;
+      this.keys.ArrowLeft = dx < -deadZone;
+      this.keys.ArrowRight = dx > deadZone;
     };
 
-    // Add arrow buttons
-    dpadContainer.appendChild(createArrowButton("up", "50px", "0px", 0));
-    dpadContainer.appendChild(createArrowButton("down", "50px", "100px", 180));
-    dpadContainer.appendChild(createArrowButton("left", "0px", "50px", -90));
-    dpadContainer.appendChild(createArrowButton("right", "100px", "50px", 90));
+    const endMovement = () => {
+      joystickKnob.style.transform = "translate(0px, 0px)";
+      this.keys.ArrowUp = this.keys.ArrowDown = this.keys.ArrowLeft = this.keys.ArrowRight = false;
+    };
+
+    joystickContainer.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      const rect = joystickContainer.getBoundingClientRect();
+      joystickCenter = {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+      updateMovement(e.touches[0]);
+    });
+
+    joystickContainer.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      updateMovement(e.touches[0]);
+    });
+
+    joystickContainer.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      endMovement();
+    });
+
+    joystickContainer.addEventListener("touchcancel", (e) => {
+      e.preventDefault();
+      endMovement();
+    });
 
     // Create shoot button
     const shootButton = document.createElement("button");
@@ -2229,6 +2247,14 @@ class SoccerGame {
   }
 
   /**
+   * Display a speech bubble above the human player when passing
+   */
+  private showPassBubble(): void {
+    if (!this.passBubble) return;
+    this.passBubbleTimer = 1;
+  }
+
+  /**
    * Update walkout animation
    */
   private updateWalkout(deltaTime: number): void {
@@ -2387,6 +2413,7 @@ class SoccerGame {
       if (distance < 2.5) {
         this.passBall(this.humanPlayer);
         this.playKickSound();
+        this.showPassBubble();
       } else if (
         this.dribblingPlayer &&
         !this.dribblingPlayer.isHuman &&
@@ -2394,6 +2421,7 @@ class SoccerGame {
       ) {
         this.passBallToPlayer(this.dribblingPlayer, this.humanPlayer);
         this.playKickSound();
+        this.showPassBubble();
       }
     }
 
@@ -2980,6 +3008,21 @@ class SoccerGame {
           if (effect.material) (effect.material as THREE.Material).dispose();
         });
         this.celebrationEffects = [];
+      }
+    }
+
+    if (this.passBubbleTimer > 0 && this.humanPlayer && this.passBubble) {
+      this.passBubbleTimer -= deltaTime;
+      const pos = this.humanPlayer.mesh.position.clone();
+      pos.y += 3;
+      pos.project(this.camera);
+      const x = ((pos.x + 1) / 2) * window.innerWidth;
+      const y = ((-pos.y + 1) / 2) * window.innerHeight;
+      this.passBubble.style.left = `${x}px`;
+      this.passBubble.style.top = `${y}px`;
+      this.passBubble.style.display = "block";
+      if (this.passBubbleTimer <= 0) {
+        this.passBubble.style.display = "none";
       }
     }
 
