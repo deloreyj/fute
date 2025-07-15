@@ -265,6 +265,21 @@ class SoccerGame {
       });
     }
 
+    // Exit button
+    const exitButton = document.getElementById(
+      "exit-button"
+    ) as HTMLButtonElement | null;
+    if (exitButton) {
+      exitButton.addEventListener("click", () => {
+        const controls = document.getElementById("controls");
+        if (controls) {
+          controls.style.display = "none";
+        }
+        this.gameState = GameState.MENU;
+        this.showMenu();
+      });
+    }
+
     // Initialize scene objects (but don't create players yet)
     this.setupLighting();
     this.createField();
