@@ -192,6 +192,9 @@ class SoccerGame {
   private dribbleOffset = new THREE.Vector3();
   private dribblingPlayer: Player | null = null;
 
+  /** Probability of calling a handball when ball hits a player's hand */
+  private handballChance = 0.02;
+
   // Animation
   private animationTime = 0;
   private lastTime = 0;
@@ -2501,7 +2504,10 @@ class SoccerGame {
         this.ball.position
       );
       if (distance < 2.5) {
-        const kickPower = 25;
+        let kickPower = 25;
+        if (this.isFreeKick && this.freeKickPlayer === this.humanPlayer) {
+          kickPower = 60;
+        }
         this.ballVelocity.x =
           -Math.sin(this.humanPlayer.mesh.rotation.y) * kickPower;
         this.ballVelocity.z =
@@ -2601,7 +2607,10 @@ class SoccerGame {
 
         // Try to kick if very close
         if (distanceToBall < 2.5 && Math.random() < 0.1) {
-          const kickPower = 20;
+          let kickPower = 20;
+          if (this.isFreeKick && this.freeKickPlayer === player) {
+            kickPower = 60;
+          }
           this.ballVelocity.x = direction.x * kickPower;
           this.ballVelocity.z = direction.z * kickPower;
           this.ballVelocity.y = 3;
@@ -2866,6 +2875,9 @@ class SoccerGame {
     // Check for fouls
     this.checkForFouls();
 
+    // Random handball detection
+    this.checkForHandballs();
+
     // Update tackle mechanics
     this.updateTackles(deltaTime);
 
@@ -3051,7 +3063,7 @@ class SoccerGame {
     });
 
     // Camera follow human player from sideline (FIFA-style)
-    if (this.humanPlayer && !this.isPenaltyKick) {
+    if (this.humanPlayer && !this.isPenaltyKick && !this.isFreeKick) {
       this.camera.position.x = this.humanPlayer.mesh.position.x;
       this.camera.position.y = 25;
       this.camera.position.z = 50;
@@ -3059,6 +3071,22 @@ class SoccerGame {
         this.humanPlayer.mesh.position.x,
         0,
         this.humanPlayer.mesh.position.z
+      );
+    } else if (this.isFreeKick && this.freeKickPlayer) {
+      const dir = new THREE.Vector3(
+        Math.sin(this.freeKickPlayer.mesh.rotation.y),
+        0,
+        Math.cos(this.freeKickPlayer.mesh.rotation.y)
+      );
+      const camPos = this.freeKickPlayer.mesh.position
+        .clone()
+        .addScaledVector(dir, -6);
+      camPos.y = 4;
+      this.camera.position.copy(camPos);
+      this.camera.lookAt(
+        this.freeKickPlayer.mesh.position.x,
+        2,
+        this.freeKickPlayer.mesh.position.z
       );
     } else if (this.isPenaltyKick && this.penaltyPlayer) {
       const spotX =
@@ -3290,6 +3318,52 @@ class SoccerGame {
   }
 
   /**
+   * Check for handballs and award free kicks
+   */
+  private checkForHandballs(): void {
+    if (this.foulCooldown > 0 || this.isPenaltyKick || this.isFreeKick) return;
+
+    // Ball must be around hand height to consider handball
+    if (this.ball.position.y < 0.9 || this.ball.position.y > 1.3) return;
+
+    this.players.forEach((player) => {
+      if (player.position === Position.GK) return; // ignore goalkeepers
+
+      const distance = player.mesh.position.distanceTo(this.ball.position);
+      if (distance < 1.2 && Math.random() < this.handballChance) {
+        this.commitHandball(player);
+      }
+    });
+  }
+
+  /**
+   * Handle a handball foul
+   */
+  private commitHandball(offender: Player): void {
+    this.foulCooldown = 5;
+    this.ballVelocity.set(0, 0, 0);
+    this.ball.position.set(offender.mesh.position.x, 0.5, offender.mesh.position.z);
+
+    // Choose nearest opponent to take the kick
+    let victim: Player | null = null;
+    let best = Infinity;
+    this.players.forEach((p) => {
+      if (p.team === offender.team) return;
+      const d = p.mesh.position.distanceTo(offender.mesh.position);
+      if (d < best) {
+        victim = p;
+        best = d;
+      }
+    });
+
+    if (victim) {
+      this.startFreeKick(victim);
+    }
+
+    this.playWhistleSound();
+  }
+
+  /**
    * Handle a foul
    */
   private commitFoul(offender: Player, victim: Player, severity: number): void {
@@ -3339,6 +3413,17 @@ class SoccerGame {
       p.isFrozen = true;
     });
     player.isFrozen = false;
+
+    // Position camera behind the kicker immediately
+    const dir = new THREE.Vector3(
+      Math.sin(player.mesh.rotation.y),
+      0,
+      Math.cos(player.mesh.rotation.y)
+    );
+    const camPos = player.mesh.position.clone().addScaledVector(dir, -6);
+    camPos.y = 4;
+    this.camera.position.copy(camPos);
+    this.camera.lookAt(player.mesh.position.x, 2, player.mesh.position.z);
   }
 
   /** End the current free kick and unfreeze everyone */
