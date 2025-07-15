@@ -84,6 +84,9 @@ interface Player {
   holdTime?: number;
   /** Prevent immediate recapture after releasing the ball */
   releaseCooldown?: number;
+
+  /** When true the player cannot move */
+  isFrozen?: boolean;
 }
 
 /**
@@ -206,6 +209,11 @@ class SoccerGame {
   // Penalty shootout
   private penaltyShootout = false;
   private penaltyScores = { home: 0, away: 0, shots: 0 };
+
+  // Free kick state
+  private isFreeKick = false;
+  private freeKickPlayer: Player | null = null;
+  private originalHumanPlayer: Player | null = null;
 
   constructor() {
     // Initialize Three.js scene
@@ -2368,6 +2376,11 @@ class SoccerGame {
   private updateHumanPlayer(deltaTime: number, moveSpeed: number): void {
     if (!this.humanPlayer) return;
 
+    if (this.humanPlayer.isFrozen) {
+      this.resetPlayerAnimation(this.humanPlayer);
+      return;
+    }
+
     let isMoving = false;
 
     // Player movement
@@ -2421,6 +2434,9 @@ class SoccerGame {
         this.isDribbling = false;
         this.dribblingPlayer = null;
         this.playKickSound();
+        if (this.isFreeKick && this.freeKickPlayer === this.humanPlayer) {
+          this.endFreeKick();
+        }
       }
     }
 
@@ -2433,6 +2449,9 @@ class SoccerGame {
         this.passBall(this.humanPlayer);
         this.playKickSound();
         this.showPassBubble();
+        if (this.isFreeKick && this.freeKickPlayer === this.humanPlayer) {
+          this.endFreeKick();
+        }
       } else if (
         this.dribblingPlayer &&
         !this.dribblingPlayer.isHuman &&
@@ -2441,6 +2460,9 @@ class SoccerGame {
         this.passBallToPlayer(this.dribblingPlayer, this.humanPlayer);
         this.playKickSound();
         this.showPassBubble();
+        if (this.isFreeKick && this.freeKickPlayer === this.humanPlayer) {
+          this.endFreeKick();
+        }
       }
     }
 
@@ -2450,7 +2472,9 @@ class SoccerGame {
     }
 
     // Dribbling
-    this.updateDribbling(this.humanPlayer, deltaTime);
+    if (!(this.isFreeKick && this.freeKickPlayer === this.humanPlayer)) {
+      this.updateDribbling(this.humanPlayer, deltaTime);
+    }
   }
 
   /**
@@ -2459,6 +2483,10 @@ class SoccerGame {
   private updateAIPlayers(deltaTime: number): void {
     this.players.forEach((player) => {
       if (player.isHuman || player.position === Position.GK) return;
+      if (player.isFrozen) {
+        this.resetPlayerAnimation(player);
+        return;
+      }
 
       // Basic AI behavior based on difficulty
       const aiSpeed =
@@ -2500,6 +2528,9 @@ class SoccerGame {
           this.ballVelocity.z = direction.z * kickPower;
           this.ballVelocity.y = 3;
           this.playKickSound();
+          if (this.isFreeKick && this.freeKickPlayer === player) {
+            this.endFreeKick();
+          }
         }
 
         // Try to tackle if opponent has ball
@@ -2534,7 +2565,9 @@ class SoccerGame {
       }
 
       // Handle dribbling logic for AI players
-      this.updateDribbling(player, deltaTime);
+      if (!this.isFreeKick) {
+        this.updateDribbling(player, deltaTime);
+      }
     });
   }
 
@@ -2544,6 +2577,10 @@ class SoccerGame {
   private updateGoalkeepers(deltaTime: number): void {
     const fieldLength = 115;
     this.goalkeepers.forEach((keeper) => {
+      if (keeper.isFrozen) {
+        this.resetPlayerAnimation(keeper);
+        return;
+      }
       if (keeper.releaseCooldown && keeper.releaseCooldown > 0) {
         keeper.releaseCooldown -= deltaTime;
       }
@@ -2599,6 +2636,9 @@ class SoccerGame {
           keeper.hasBall = false;
           keeper.releaseCooldown = 0.5;
           this.rollBallToTeammate(keeper);
+          if (this.isFreeKick && this.freeKickPlayer === keeper) {
+            this.endFreeKick();
+          }
           this.dribblingPlayer = null;
         }
       } else {
@@ -3079,6 +3119,7 @@ class SoccerGame {
    * Update referees
    */
   private updateReferees(deltaTime: number): void {
+    if (this.isFreeKick) return;
     // Update foul cooldown
     if (this.foulCooldown > 0) {
       this.foulCooldown -= deltaTime;
@@ -3179,8 +3220,37 @@ class SoccerGame {
 
     // Card handling removed
 
+    // Start free kick for the fouled team
+    this.startFreeKick(victim);
+
     // Play whistle sound
     this.playWhistleSound();
+  }
+
+  /** Begin a free kick for the given player */
+  private startFreeKick(player: Player): void {
+    this.isFreeKick = true;
+    this.freeKickPlayer = player;
+    this.originalHumanPlayer = this.humanPlayer;
+    if (player.team === this.currentTeam) {
+      this.humanPlayer = player;
+    }
+    this.players.forEach((p) => {
+      p.isFrozen = p !== player;
+    });
+  }
+
+  /** End the current free kick and unfreeze everyone */
+  private endFreeKick(): void {
+    this.isFreeKick = false;
+    this.freeKickPlayer = null;
+    this.players.forEach((p) => {
+      p.isFrozen = false;
+    });
+    if (this.originalHumanPlayer) {
+      this.humanPlayer = this.originalHumanPlayer;
+      this.originalHumanPlayer = null;
+    }
   }
 
 
