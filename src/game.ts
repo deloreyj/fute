@@ -325,6 +325,13 @@ class SoccerGame {
       this.touchControlsContainer.style.display = "none";
     }
 
+    // Ask for player name if not stored
+    let playerName = localStorage.getItem("playerName");
+    if (!playerName) {
+      playerName = prompt("Enter your name:") || "Anonymous";
+      localStorage.setItem("playerName", playerName);
+    }
+
     // Create menu container
     this.menuContainer = document.createElement("div");
     this.menuContainer.style.position = "fixed";
@@ -410,6 +417,51 @@ class SoccerGame {
       this.menuContainer!.appendChild(button);
     });
 
+    // Leaderboard button
+    const leaderboardButton = document.createElement("button");
+    leaderboardButton.textContent = "🏆 Leaderboard";
+    leaderboardButton.style.display = "block";
+    leaderboardButton.style.margin = "30px auto 0";
+    leaderboardButton.style.padding = "15px 40px";
+    leaderboardButton.style.fontSize = "20px";
+    leaderboardButton.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+    leaderboardButton.style.color = "white";
+    leaderboardButton.style.border = "2px solid white";
+    leaderboardButton.style.borderRadius = "10px";
+    leaderboardButton.style.cursor = "pointer";
+    leaderboardButton.style.transition = "all 0.3s";
+    leaderboardButton.style.width = "300px";
+
+    leaderboardButton.addEventListener("mouseover", () => {
+      leaderboardButton.style.backgroundColor = "rgba(255, 255, 255, 0.4)";
+      leaderboardButton.style.transform = "scale(1.05)";
+    });
+    leaderboardButton.addEventListener("mouseout", () => {
+      leaderboardButton.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+      leaderboardButton.style.transform = "scale(1)";
+    });
+
+    leaderboardButton.addEventListener("click", () => {
+      const leaderboard = JSON.parse(
+        localStorage.getItem("leaderboard") || "{}"
+      ) as Record<string, number>;
+      let topName = "";
+      let topCount = 0;
+      Object.entries(leaderboard).forEach(([name, count]) => {
+        if (count > topCount) {
+          topName = name;
+          topCount = count;
+        }
+      });
+      alert(
+        topName
+          ? `Most Plays: ${topName} (${topCount})`
+          : "No plays recorded yet"
+      );
+    });
+
+    this.menuContainer!.appendChild(leaderboardButton);
+
     document.body.appendChild(this.menuContainer);
   }
 
@@ -426,6 +478,14 @@ class SoccerGame {
       this.endContainer.remove();
       this.endContainer = null;
     }
+
+    // Update leaderboard play count
+    const playerName = localStorage.getItem("playerName") || "Anonymous";
+    const leaderboard = JSON.parse(
+      localStorage.getItem("leaderboard") || "{}"
+    ) as Record<string, number>;
+    leaderboard[playerName] = (leaderboard[playerName] || 0) + 1;
+    localStorage.setItem("leaderboard", JSON.stringify(leaderboard));
 
     // Show game canvas
     this.renderer.domElement.style.opacity = "1";
