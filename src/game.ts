@@ -11,6 +11,7 @@ import {
   mls,
   international,
 } from "./data";
+import { teamKits, TeamKit, FieldKit } from "./data/team_kits";
 
 // Field and penalty constants
 const FIELD_LENGTH = 115;
@@ -208,13 +209,15 @@ class SoccerGame {
 
   // Current team
   private currentTeam = TeamType.SPORTING;
-  private homeTeamName = "Sporting CP";
-  private awayTeamName = "Benfica";
+  private homeTeamName = "Sporting Clube de Portugal";
+  private awayTeamName = "Sport Lisboa e Benfica";
+  private homeKit: TeamKit = teamKits["Sporting Clube de Portugal"];
+  private awayKit: TeamKit = teamKits["Sport Lisboa e Benfica"];
 
   // Scoring system
   private scores = {
-    home: 0, // Left side (Sporting)
-    away: 0, // Right side (Benfica)
+    home: 0, // Left side (home team)
+    away: 0, // Right side (away team)
   };
   private scoreboard: THREE.Group | null = null;
 
@@ -481,6 +484,8 @@ class SoccerGame {
         this.difficulty = level;
         this.homeTeamName = homeSelect.value;
         this.awayTeamName = awaySelect.value;
+        this.homeKit = teamKits[this.homeTeamName] || this.homeKit;
+        this.awayKit = teamKits[this.awayTeamName] || this.awayKit;
         this.startMatch();
       });
 
@@ -643,8 +648,9 @@ class SoccerGame {
     // Create Sporting team
     formations[TeamType.SPORTING].forEach((info, index) => {
       const role = info.pos === Position.GK ? PlayerRole.GOALKEEPER : PlayerRole.FIELD;
+      const kit = role === PlayerRole.GOALKEEPER ? this.homeKit.goalkeeper : this.homeKit.field;
       const player: Player = {
-        mesh: this.createPlayer(TeamType.SPORTING, role),
+        mesh: this.createPlayer(TeamType.SPORTING, role, kit),
         team: TeamType.SPORTING,
         position: info.pos,
         number: info.num,
@@ -670,11 +676,12 @@ class SoccerGame {
       }
     });
 
-    // Create Benfica team
+    // Create away team
     formations[TeamType.BENFICA].forEach((info, index) => {
       const role = info.pos === Position.GK ? PlayerRole.GOALKEEPER : PlayerRole.FIELD;
+      const kit = role === PlayerRole.GOALKEEPER ? this.awayKit.goalkeeper : this.awayKit.field;
       const player: Player = {
-        mesh: this.createPlayer(TeamType.BENFICA, role),
+        mesh: this.createPlayer(TeamType.BENFICA, role, kit),
         team: TeamType.BENFICA,
         position: info.pos,
         number: info.num,
@@ -1546,7 +1553,11 @@ class SoccerGame {
   /**
    * Create the player model (low-poly style)
    */
-  private createPlayer(teamType: TeamType, role: PlayerRole = PlayerRole.FIELD): THREE.Mesh {
+  private createPlayer(
+    teamType: TeamType,
+    role: PlayerRole = PlayerRole.FIELD,
+    kit?: FieldKit
+  ): THREE.Mesh {
     const playerGroup = new THREE.Group();
 
     // Field dimensions for positioning
@@ -1563,32 +1574,33 @@ class SoccerGame {
     let sockPrimaryColor: number;
     let sockSecondaryColor: number;
 
-    if (role === PlayerRole.GOALKEEPER) {
+    if (kit) {
+      shirtColors = kit.shirtColors;
+      shortsColor = kit.shortsColor;
+      sockPrimaryColor = kit.sockPrimaryColor;
+      sockSecondaryColor = kit.sockSecondaryColor;
+    } else if (role === PlayerRole.GOALKEEPER) {
       if (teamType === TeamType.SPORTING) {
-        // Sporting goalkeeper kit - yellow
         shirtColors = [0xffcc00];
         shortsColor = 0xffcc00;
         sockPrimaryColor = 0xffcc00;
         sockSecondaryColor = 0x000000;
       } else {
-        // Benfica goalkeeper kit - blue
         shirtColors = [0x0066ff];
         shortsColor = 0x0066ff;
         sockPrimaryColor = 0x0066ff;
         sockSecondaryColor = 0xffffff;
       }
     } else if (teamType === TeamType.SPORTING) {
-      // Sporting CP field player colors
-      shirtColors = [0x007a33, 0xffffff]; // Green and white stripes
-      shortsColor = 0x000000; // Black
-      sockPrimaryColor = 0x007a33; // Green
-      sockSecondaryColor = 0xffffff; // White
+      shirtColors = [0x007a33, 0xffffff];
+      shortsColor = 0x000000;
+      sockPrimaryColor = 0x007a33;
+      sockSecondaryColor = 0xffffff;
     } else {
-      // Benfica field player colors
-      shirtColors = [0xd40000]; // Solid red
-      shortsColor = 0xffffff; // White
-      sockPrimaryColor = 0xd40000; // Red
-      sockSecondaryColor = 0xffffff; // White
+      shirtColors = [0xd40000];
+      shortsColor = 0xffffff;
+      sockPrimaryColor = 0xd40000;
+      sockSecondaryColor = 0xffffff;
     }
 
     // Head (rounded cube for low-poly look)
@@ -1635,7 +1647,7 @@ class SoccerGame {
         torsoGroup.add(stripe);
       }
     } else {
-      // Solid color shirt for Benfica players and all goalkeepers
+      // Solid color shirt for generic teams and all goalkeepers
       const torsoGeometry = new THREE.BoxGeometry(1.2, 1.0, 0.6);
       const torsoMaterial = new THREE.MeshLambertMaterial({
         color: shirtColors[0],
@@ -1647,7 +1659,7 @@ class SoccerGame {
       torso.receiveShadow = true;
       torsoGroup.add(torso);
 
-      // White collar/trim for Benfica field players
+      // White collar/trim for default away field players
       if (teamType === TeamType.BENFICA && role === PlayerRole.FIELD) {
         const collarGeometry = new THREE.BoxGeometry(1.21, 0.1, 0.61);
         const collarMaterial = new THREE.MeshLambertMaterial({
@@ -2378,7 +2390,7 @@ class SoccerGame {
           this.animatePlayerWalking(player, deltaTime);
         }
       } else {
-        // Benfica walks to the right side
+        // Away team walks to the right side
         const targetX =
           50 - (player.position === Position.GK ? 0 : 15 + (index - 11) * 2);
         if (player.mesh.position.x < targetX) {
@@ -2903,7 +2915,11 @@ class SoccerGame {
       this.scene.remove(this.humanPlayer.mesh);
 
       // Create new player mesh with different team
-      this.humanPlayer.mesh = this.createPlayer(this.currentTeam);
+      const kit =
+        this.currentTeam === TeamType.SPORTING
+          ? this.homeKit.field
+          : this.awayKit.field;
+      this.humanPlayer.mesh = this.createPlayer(this.currentTeam, PlayerRole.FIELD, kit);
       this.humanPlayer.mesh.position.copy(currentPos);
       this.humanPlayer.mesh.rotation.copy(currentRot);
       this.humanPlayer.team = this.currentTeam;
@@ -3305,16 +3321,16 @@ class SoccerGame {
     this.ball.position.z = foulPos.z;
 
     // Determine if foul occurred inside the defending team's penalty box
-    const inSportingBox =
+    const inHomeBox =
       foulPos.x < -FIELD_LENGTH / 2 + PENALTY_AREA_DEPTH &&
       Math.abs(foulPos.z) <= PENALTY_AREA_WIDTH / 2;
-    const inBenficaBox =
+    const inAwayBox =
       foulPos.x > FIELD_LENGTH / 2 - PENALTY_AREA_DEPTH &&
       Math.abs(foulPos.z) <= PENALTY_AREA_WIDTH / 2;
 
     if (
-      (inSportingBox && offender.team === TeamType.SPORTING && victim.team !== TeamType.SPORTING) ||
-      (inBenficaBox && offender.team === TeamType.BENFICA && victim.team !== TeamType.BENFICA)
+      (inHomeBox && offender.team === TeamType.SPORTING && victim.team !== TeamType.SPORTING) ||
+      (inAwayBox && offender.team === TeamType.BENFICA && victim.team !== TeamType.BENFICA)
     ) {
       const side = offender.team === TeamType.SPORTING ? -1 : 1;
       this.startPenaltyKick(victim, side);
