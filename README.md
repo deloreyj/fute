@@ -2,7 +2,7 @@
 
 # ⚽ The Most Vibin' Soccer Game Ever!
 
-Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting CP vs Benfica dreams! We've packed this bad boy with Three.js magic and turbocharged it with Cloudflare Workers. Get ready to experience some low-poly soccer madness! 🎮
+Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting CP vs FC Barcelona dreams! We've packed this bad boy with Three.js magic and turbocharged it with Cloudflare Workers. Get ready to experience some low-poly soccer madness! 🎮
 
 ## 🔥 What Makes This Game Lit?
 
@@ -16,7 +16,7 @@ Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting C
 ### Choose Your Squad
 
 - Rock the green and white stripes of Sporting CP
-- Or flex in Benfica's legendary red
+- Or flex in FC Barcelona's iconic blaugrana
 - Hit 'T' to switch teams (because why pick just one?)
 - Your player's got some smooth moves with that 6-bone rig
 - Ball sticks to your feet like magic when you're close (Messi who?)
