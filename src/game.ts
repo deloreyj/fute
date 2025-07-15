@@ -209,6 +209,7 @@ class SoccerGame {
   // Free kick state
   private isFreeKick = false;
   private freeKickPlayer: Player | null = null;
+  private originalHumanPlayer: Player | null = null;
 
   constructor() {
     // Initialize Three.js scene
@@ -2431,6 +2432,9 @@ class SoccerGame {
           this.ballVelocity.z = direction.z * kickPower;
           this.ballVelocity.y = 3;
           this.playKickSound();
+          if (this.isFreeKick && this.freeKickPlayer === player) {
+            this.endFreeKick();
+          }
         }
 
         // Try to tackle if opponent has ball
@@ -2536,6 +2540,9 @@ class SoccerGame {
           keeper.hasBall = false;
           keeper.releaseCooldown = 0.5;
           this.rollBallToTeammate(keeper);
+          if (this.isFreeKick && this.freeKickPlayer === keeper) {
+            this.endFreeKick();
+          }
           this.dribblingPlayer = null;
         }
       } else {
@@ -3128,6 +3135,10 @@ class SoccerGame {
   private startFreeKick(player: Player): void {
     this.isFreeKick = true;
     this.freeKickPlayer = player;
+    this.originalHumanPlayer = this.humanPlayer;
+    if (player.team === this.currentTeam) {
+      this.humanPlayer = player;
+    }
     this.players.forEach((p) => {
       p.isFrozen = p !== player;
     });
@@ -3140,6 +3151,10 @@ class SoccerGame {
     this.players.forEach((p) => {
       p.isFrozen = false;
     });
+    if (this.originalHumanPlayer) {
+      this.humanPlayer = this.originalHumanPlayer;
+      this.originalHumanPlayer = null;
+    }
   }
 
 
