@@ -1,0 +1,22 @@
+export const brasileirao = [
+  "Athletico Paranaense",
+  "Atlético Goianiense",
+  "Atlético Mineiro",
+  "Bahia BA",
+  "Botafogo RJ",
+  "Ceará CE",
+  "Corinthians SP",
+  "Coritiba PR",
+  "Flamengo RJ",
+  "Fluminense RJ",
+  "Fortaleza CE",
+  "Goiás GO",
+  "Grêmio Porto Alegre",
+  "Internacional",
+  "Palmeiras",
+  "Red Bull Bragantino",
+  "Santos FC",
+  "Sport Recife PE",
+  "São Paulo FC",
+  "Vasco da Gama RJ"
+] as string[];

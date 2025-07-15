@@ -1,4 +1,16 @@
 import * as THREE from "three";
+import {
+  epl,
+  laliga,
+  bundesliga,
+  seriea,
+  ligue1,
+  brasileirao,
+  primeira_liga,
+  belgian_pro,
+  mls,
+  international,
+} from "./data";
 
 // Field and penalty constants
 const FIELD_LENGTH = 115;
@@ -196,6 +208,8 @@ class SoccerGame {
 
   // Current team
   private currentTeam = TeamType.SPORTING;
+  private homeTeamName = "Sporting CP";
+  private awayTeamName = "Benfica";
 
   // Scoring system
   private scores = {
@@ -352,11 +366,58 @@ class SoccerGame {
 
     // Title
     const title = document.createElement("h1");
-    title.textContent = "⚽ SPORTING vs BENFICA ⚽";
+    title.textContent = "⚽ Select Teams ⚽";
     title.style.fontSize = "48px";
     title.style.marginBottom = "20px";
     title.style.textShadow = "2px 2px 4px rgba(0,0,0,0.8)";
     this.menuContainer.appendChild(title);
+
+    // Team selection
+    const teamSection = document.createElement("div");
+    teamSection.style.marginBottom = "20px";
+
+    const homeSelect = document.createElement("select");
+    const awaySelect = document.createElement("select");
+
+    const addOptions = (groupName: string, teams: string[]) => {
+      const optGroupHome = document.createElement("optgroup");
+      optGroupHome.label = groupName;
+      const optGroupAway = document.createElement("optgroup");
+      optGroupAway.label = groupName;
+      teams.forEach((t) => {
+        const optH = document.createElement("option");
+        optH.value = t;
+        optH.textContent = t;
+        optGroupHome.appendChild(optH);
+        const optA = document.createElement("option");
+        optA.value = t;
+        optA.textContent = t;
+        optGroupAway.appendChild(optA);
+      });
+      homeSelect.appendChild(optGroupHome);
+      awaySelect.appendChild(optGroupAway);
+    };
+
+    addOptions("Premier League", epl);
+    addOptions("La Liga", laliga);
+    addOptions("Bundesliga", bundesliga);
+    addOptions("Serie A", seriea);
+    addOptions("Ligue 1", ligue1);
+    addOptions("Brasileirão", brasileirao);
+    addOptions("Primeira Liga", primeira_liga);
+    addOptions("Belgian Pro", belgian_pro);
+    addOptions("MLS", mls);
+    addOptions("International", international);
+
+    homeSelect.value = this.homeTeamName;
+    awaySelect.value = this.awayTeamName;
+
+    homeSelect.style.marginRight = "10px";
+    awaySelect.style.marginLeft = "10px";
+    teamSection.appendChild(homeSelect);
+    teamSection.appendChild(awaySelect);
+
+    this.menuContainer.appendChild(teamSection);
 
     // Subtitle
     const subtitle = document.createElement("p");
@@ -418,6 +479,8 @@ class SoccerGame {
 
       button.addEventListener("click", () => {
         this.difficulty = level;
+        this.homeTeamName = homeSelect.value;
+        this.awayTeamName = awaySelect.value;
         this.startMatch();
       });
 
@@ -3709,7 +3772,8 @@ class SoccerGame {
   /** End the game if a team scores 12 goals */
   private checkGoalLimit(): void {
     if (this.scores.home >= 12 || this.scores.away >= 12) {
-      if (this.timeDisplay) this.timeDisplay.textContent = "YOU WIN!!!!";
+      if (this.timeDisplay)
+        this.timeDisplay.textContent = `${this.homeTeamName} wins!`;
       this.gameState = GameState.MENU;
       this.showEndOptions();
     }
@@ -3744,8 +3808,8 @@ class SoccerGame {
       const homeWin = this.scores.home > this.scores.away;
       if (this.timeDisplay)
         this.timeDisplay.textContent = homeWin
-          ? "YOU WIN!!!!!! :)"
-          : "aww you lost :( try again";
+          ? `${this.homeTeamName} wins!`
+          : `${this.awayTeamName} wins!`;
       this.gameState = GameState.MENU;
       this.showEndOptions();
     }
@@ -3788,8 +3852,8 @@ class SoccerGame {
     const homeWin = this.penaltyScores.home > this.penaltyScores.away;
     if (this.timeDisplay)
       this.timeDisplay.textContent = homeWin
-        ? "YOU WIN!!!!!! :)"
-        : "aww you lost :( try again";
+        ? `${this.homeTeamName} wins!`
+        : `${this.awayTeamName} wins!`;
     this.gameState = GameState.MENU;
     this.showEndOptions();
   }

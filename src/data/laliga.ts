@@ -1,0 +1,22 @@
+export const laliga = [
+  "Athletic Club",
+  "CA Osasuna",
+  "Club Atlético de Madrid",
+  "Cádiz CF",
+  "Deportivo Alavés",
+  "FC Barcelona",
+  "Getafe CF",
+  "Girona FC",
+  "Granada CF",
+  "RC Celta de Vigo",
+  "RCD Mallorca",
+  "Rayo Vallecano de Madrid",
+  "Real Betis Balompié",
+  "Real Madrid CF",
+  "Real Sociedad de Fútbol",
+  "Sevilla FC",
+  "UD Almería",
+  "UD Las Palmas",
+  "Valencia CF",
+  "Villarreal CF"
+] as string[];

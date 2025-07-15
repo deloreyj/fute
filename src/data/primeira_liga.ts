@@ -1,0 +1,20 @@
+export const primeira_liga = [
+  "Boavista FC",
+  "CF Estrela da Amadora",
+  "Casa Pia AC",
+  "FC Arouca",
+  "FC Famalicão",
+  "FC Porto",
+  "FC Vizela",
+  "GD Chaves",
+  "GD Estoril Praia",
+  "Gil Vicente FC",
+  "Moreirense FC",
+  "Portimonense SC",
+  "Rio Ave FC",
+  "SC Farense",
+  "Sport Lisboa e Benfica",
+  "Sporting Clube de Braga",
+  "Sporting Clube de Portugal",
+  "Vitória Guimarães"
+] as string[];
