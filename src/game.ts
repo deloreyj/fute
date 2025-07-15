@@ -3408,13 +3408,20 @@ class SoccerGame {
     const targetZ = (fracX - 0.5) * GOAL_WIDTH;
     const targetY = 2 + (0.5 - fracY) * 4;
 
-    const dir = new THREE.Vector3(
-      goalX - this.ball.position.x,
-      targetY - this.ball.position.y,
-      targetZ - this.ball.position.z
-    );
-    dir.normalize();
-    this.ballVelocity.copy(dir.multiplyScalar(30));
+    const start = this.ball.position.clone();
+    const dx = goalX - start.x;
+    const dz = targetZ - start.z;
+    const dy = targetY - start.y;
+
+    const horizontalDist = Math.sqrt(dx * dx + dz * dz);
+    const horizontalSpeed = 30; // Base horizontal shot speed
+    const time = horizontalDist / horizontalSpeed;
+
+    const vx = dx / time;
+    const vz = dz / time;
+    const vy = (dy + 0.5 * 30 * time * time) / time; // Compensate for gravity
+
+    this.ballVelocity.set(vx, vy, vz);
     this.playKickSound();
 
     this.endPenaltyKick();
