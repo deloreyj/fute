@@ -1,5 +1,13 @@
 import * as THREE from "three";
 
+// Field and penalty constants
+const FIELD_LENGTH = 115;
+const FIELD_WIDTH = 75;
+const PENALTY_AREA_WIDTH = 44;
+const PENALTY_AREA_DEPTH = 18;
+const PENALTY_SPOT = 12; // Distance from goal line
+const GOAL_WIDTH = 16;
+
 /**
  * Team types for player variations
  */
@@ -209,6 +217,12 @@ class SoccerGame {
   // Penalty shootout
   private penaltyShootout = false;
   private penaltyScores = { home: 0, away: 0, shots: 0 };
+
+  // Penalty kick state
+  private isPenaltyKick = false;
+  private penaltyPlayer: Player | null = null;
+  private penaltySide: number = 1;
+  private penaltyListener: ((e: MouseEvent | TouchEvent) => void) | null = null;
 
   // Free kick state
   private isFreeKick = false;
@@ -2481,6 +2495,7 @@ class SoccerGame {
    * Update AI players
    */
   private updateAIPlayers(deltaTime: number): void {
+    if (this.isPenaltyKick) return;
     this.players.forEach((player) => {
       if (player.isHuman || player.position === Position.GK) return;
       if (player.isFrozen) {
@@ -2575,6 +2590,7 @@ class SoccerGame {
    * Update goalkeeper behavior
    */
   private updateGoalkeepers(deltaTime: number): void {
+    if (this.isPenaltyKick) return;
     const fieldLength = 115;
     this.goalkeepers.forEach((keeper) => {
       if (keeper.isFrozen) {
@@ -2972,7 +2988,7 @@ class SoccerGame {
     });
 
     // Camera follow human player from sideline (FIFA-style)
-    if (this.humanPlayer) {
+    if (this.humanPlayer && !this.isPenaltyKick) {
       this.camera.position.x = this.humanPlayer.mesh.position.x;
       this.camera.position.y = 25;
       this.camera.position.z = 50;
@@ -2981,6 +2997,13 @@ class SoccerGame {
         0,
         this.humanPlayer.mesh.position.z
       );
+    } else if (this.isPenaltyKick && this.penaltyPlayer) {
+      const spotX =
+        this.penaltySide === -1
+          ? -FIELD_LENGTH / 2 + PENALTY_SPOT
+          : FIELD_LENGTH / 2 - PENALTY_SPOT;
+      this.camera.position.set(spotX - this.penaltySide * 6, 5, 0);
+      this.camera.lookAt(spotX, 2, 0);
     }
 
     // Animate crowd
@@ -3119,7 +3142,7 @@ class SoccerGame {
    * Update referees
    */
   private updateReferees(deltaTime: number): void {
-    if (this.isFreeKick) return;
+    if (this.isFreeKick || this.isPenaltyKick) return;
     // Update foul cooldown
     if (this.foulCooldown > 0) {
       this.foulCooldown -= deltaTime;
@@ -3187,7 +3210,7 @@ class SoccerGame {
    * Check for fouls
    */
   private checkForFouls(): void {
-    if (this.foulCooldown > 0) return;
+    if (this.foulCooldown > 0 || this.isPenaltyKick) return;
 
     this.players.forEach((offender) => {
       if (!offender.isTackling || offender.tackleTouchedBall) return;
@@ -3218,10 +3241,24 @@ class SoccerGame {
     this.ball.position.x = foulPos.x;
     this.ball.position.z = foulPos.z;
 
-    // Card handling removed
+    // Determine if foul occurred inside the defending team's penalty box
+    const inSportingBox =
+      foulPos.x < -FIELD_LENGTH / 2 + PENALTY_AREA_DEPTH &&
+      Math.abs(foulPos.z) <= PENALTY_AREA_WIDTH / 2;
+    const inBenficaBox =
+      foulPos.x > FIELD_LENGTH / 2 - PENALTY_AREA_DEPTH &&
+      Math.abs(foulPos.z) <= PENALTY_AREA_WIDTH / 2;
 
-    // Start free kick for the fouled team
-    this.startFreeKick(victim);
+    if (
+      (inSportingBox && offender.team === TeamType.SPORTING && victim.team !== TeamType.SPORTING) ||
+      (inBenficaBox && offender.team === TeamType.BENFICA && victim.team !== TeamType.BENFICA)
+    ) {
+      const side = offender.team === TeamType.SPORTING ? -1 : 1;
+      this.startPenaltyKick(victim, side);
+    } else {
+      // Start free kick for the fouled team
+      this.startFreeKick(victim);
+    }
 
     // Play whistle sound
     this.playWhistleSound();
@@ -3236,14 +3273,99 @@ class SoccerGame {
       this.humanPlayer = player;
     }
     this.players.forEach((p) => {
-      p.isFrozen = p !== player;
+      p.isFrozen = true;
     });
+    player.isFrozen = false;
   }
 
   /** End the current free kick and unfreeze everyone */
   private endFreeKick(): void {
     this.isFreeKick = false;
     this.freeKickPlayer = null;
+    this.players.forEach((p) => {
+      p.isFrozen = false;
+    });
+    if (this.originalHumanPlayer) {
+      this.humanPlayer = this.originalHumanPlayer;
+      this.originalHumanPlayer = null;
+    }
+  }
+
+  /** Begin a penalty kick for the given player */
+  private startPenaltyKick(player: Player, side: number): void {
+    this.isPenaltyKick = true;
+    this.penaltyPlayer = player;
+    this.penaltySide = side;
+    this.originalHumanPlayer = this.humanPlayer;
+    if (player.team === this.currentTeam) {
+      this.humanPlayer = player;
+    }
+    this.players.forEach((p) => {
+      p.isFrozen = p !== player;
+    });
+
+    const spotX =
+      side === -1
+        ? -FIELD_LENGTH / 2 + PENALTY_SPOT
+        : FIELD_LENGTH / 2 - PENALTY_SPOT;
+    this.ball.position.set(spotX, 0.5, 0);
+    this.ballVelocity.set(0, 0, 0);
+
+    player.mesh.position.set(spotX - side * 2, 0.5, 0);
+    player.mesh.lookAt(spotX + side, 0.5, 0);
+
+    this.camera.position.set(spotX - side * 6, 5, 0);
+    this.camera.lookAt(spotX, 2, 0);
+
+    this.penaltyListener = (e: MouseEvent | TouchEvent) =>
+      this.handlePenaltyKick(e);
+    window.addEventListener("mousedown", this.penaltyListener);
+    window.addEventListener("touchstart", this.penaltyListener);
+  }
+
+  /** Handle user input during a penalty kick */
+  private handlePenaltyKick(e: MouseEvent | TouchEvent): void {
+    if (!this.isPenaltyKick) return;
+
+    e.preventDefault();
+    let clientX = 0;
+    let clientY = 0;
+    if (e instanceof TouchEvent) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = (e as MouseEvent).clientX;
+      clientY = (e as MouseEvent).clientY;
+    }
+
+    const fracX = clientX / window.innerWidth;
+    const fracY = clientY / window.innerHeight;
+
+    const goalX = this.penaltySide === -1 ? -FIELD_LENGTH / 2 : FIELD_LENGTH / 2;
+    const targetZ = (fracX - 0.5) * GOAL_WIDTH;
+    const targetY = 2 + (0.5 - fracY) * 4;
+
+    const dir = new THREE.Vector3(
+      goalX - this.ball.position.x,
+      targetY - this.ball.position.y,
+      targetZ - this.ball.position.z
+    );
+    dir.normalize();
+    this.ballVelocity.copy(dir.multiplyScalar(30));
+    this.playKickSound();
+
+    this.endPenaltyKick();
+  }
+
+  /** End the current penalty kick and unfreeze everyone */
+  private endPenaltyKick(): void {
+    if (this.penaltyListener) {
+      window.removeEventListener("mousedown", this.penaltyListener);
+      window.removeEventListener("touchstart", this.penaltyListener);
+      this.penaltyListener = null;
+    }
+    this.isPenaltyKick = false;
+    this.penaltyPlayer = null;
     this.players.forEach((p) => {
       p.isFrozen = false;
     });
@@ -3443,6 +3565,7 @@ class SoccerGame {
    * Update tackle mechanics
    */
   private updateTackles(deltaTime: number): void {
+    if (this.isPenaltyKick) return;
     this.players.forEach((player) => {
       // Update sliding tackle
       if (player.isTackling) {
@@ -3522,6 +3645,7 @@ class SoccerGame {
    * Check for running tackles (collision-based tackles)
    */
   private checkRunningTackles(): void {
+    if (this.isPenaltyKick) return;
     // Check each player against the ball carrier
     if (!this.dribblingPlayer) return;
 
