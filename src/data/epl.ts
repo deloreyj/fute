@@ -1,0 +1,22 @@
+export const epl = [
+  "AFC Bournemouth",
+  "Arsenal FC",
+  "Aston Villa FC",
+  "Brentford FC",
+  "Brighton & Hove Albion FC",
+  "Burnley FC",
+  "Chelsea FC",
+  "Crystal Palace FC",
+  "Everton FC",
+  "Fulham FC",
+  "Liverpool FC",
+  "Luton Town FC",
+  "Manchester City FC",
+  "Manchester United FC",
+  "Newcastle United FC",
+  "Nottingham Forest FC",
+  "Sheffield United FC",
+  "Tottenham Hotspur FC",
+  "West Ham United FC",
+  "Wolverhampton Wanderers FC"
+] as string[];

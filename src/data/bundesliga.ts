@@ -1,0 +1,20 @@
+export const bundesliga = [
+  "1. FC Heidenheim 1846",
+  "1. FC Köln",
+  "1. FC Union Berlin",
+  "1. FSV Mainz 05",
+  "Bayer 04 Leverkusen",
+  "Borussia Dortmund",
+  "Borussia Mönchengladbach",
+  "Eintracht Frankfurt",
+  "FC Augsburg",
+  "FC Bayern München",
+  "RB Leipzig",
+  "SC Freiburg",
+  "SV Darmstadt 98",
+  "SV Werder Bremen",
+  "TSG 1899 Hoffenheim",
+  "VfB Stuttgart",
+  "VfL Bochum 1848",
+  "VfL Wolfsburg"
+] as string[];

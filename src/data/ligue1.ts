@@ -1,0 +1,20 @@
+export const ligue1 = [
+  "AS Monaco FC",
+  "Clermont Foot 63",
+  "FC Lorient",
+  "FC Metz",
+  "FC Nantes",
+  "Le Havre AC",
+  "Lille OSC",
+  "Montpellier HSC",
+  "OGC Nice",
+  "Olympique Lyonnais",
+  "Olympique de Marseille",
+  "Paris Saint-Germain FC",
+  "RC Strasbourg Alsace",
+  "Racing Club de Lens",
+  "Stade Brestois 29",
+  "Stade Rennais FC 1901",
+  "Stade de Reims",
+  "Toulouse FC"
+] as string[];

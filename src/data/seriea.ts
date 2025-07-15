@@ -1,0 +1,22 @@
+export const seriea = [
+  "AC Milan",
+  "AC Monza",
+  "ACF Fiorentina",
+  "AS Roma",
+  "Atalanta BC",
+  "Bologna FC 1909",
+  "Cagliari Calcio",
+  "Empoli FC",
+  "FC Internazionale Milano",
+  "Frosinone Calcio",
+  "Genoa CFC",
+  "Hellas Verona FC",
+  "Juventus FC",
+  "SS Lazio",
+  "SSC Napoli",
+  "Torino FC",
+  "US Lecce",
+  "US Salernitana 1919",
+  "US Sassuolo Calcio",
+  "Udinese Calcio"
+] as string[];
