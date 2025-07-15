@@ -200,6 +200,9 @@ class SoccerGame {
   private timeDisplay: HTMLDivElement | null = null;
   private isPaused = false;
 
+  // Extra time flag
+  private extraTimeAdded = false;
+
   // Penalty shootout
   private penaltyShootout = false;
   private penaltyScores = { home: 0, away: 0, shots: 0 };
@@ -3520,6 +3523,13 @@ class SoccerGame {
   /** Determine match result */
   private endMatch(): void {
     if (this.scores.home === this.scores.away) {
+      if (!this.extraTimeAdded) {
+        // Extend the half by 30 seconds for extra time
+        this.halfDuration += 30;
+        this.extraTimeAdded = true;
+        this.updateTimeDisplay();
+        return;
+      }
       this.startPenaltyShootout();
     } else {
       const homeWin = this.scores.home > this.scores.away;
