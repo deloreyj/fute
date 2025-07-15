@@ -27,6 +27,7 @@ Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting C
 - Camera angle giving you those FIFA game vibes
 - Score a goal and watch the whole place go nuts
 - Confetti! Because GOALS = PARTY 🎉
+- Challenge yourself in the new **World Cup mode** and lift the trophy
 
 ### Sounds of the Game
 

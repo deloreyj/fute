@@ -130,6 +130,18 @@ interface Foul {
 }
 
 /**
+ * Simple world cup tournament tracking
+ */
+interface WorldCupState {
+  active: boolean;
+  host: string;
+  stage: "round16" | "quarter" | "semi" | "final" | "champion";
+  playerTeam: string;
+  remainingTeams: string[];
+  opponent: string | null;
+}
+
+/**
  * Main game class for the soccer game
  */
 class SoccerGame {
@@ -242,6 +254,10 @@ class SoccerGame {
   private isFreeKick = false;
   private freeKickPlayer: Player | null = null;
   private originalHumanPlayer: Player | null = null;
+
+  // World Cup state
+  private worldCup: WorldCupState | null = null;
+  private matchResult: boolean | null = null;
 
   constructor() {
     // Initialize Three.js scene
@@ -487,6 +503,35 @@ class SoccerGame {
       this.menuContainer!.appendChild(button);
     });
 
+    const wcButton = document.createElement("button");
+    wcButton.textContent = "\ud83c\udf0d World Cup Mode";
+    wcButton.style.display = "block";
+    wcButton.style.margin = "20px auto";
+    wcButton.style.padding = "15px 40px";
+    wcButton.style.fontSize = "20px";
+    wcButton.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+    wcButton.style.color = "white";
+    wcButton.style.border = "2px solid white";
+    wcButton.style.borderRadius = "10px";
+    wcButton.style.cursor = "pointer";
+    wcButton.style.transition = "all 0.3s";
+    wcButton.style.width = "300px";
+    wcButton.addEventListener("mouseover", () => {
+      wcButton.style.backgroundColor = "rgba(255, 255, 255, 0.4)";
+      wcButton.style.transform = "scale(1.05)";
+    });
+    wcButton.addEventListener("mouseout", () => {
+      wcButton.style.backgroundColor = "rgba(255, 255, 255, 0.2)";
+      wcButton.style.transform = "scale(1)";
+    });
+    wcButton.addEventListener("click", () => {
+      const host = prompt("World Cup host country?", "Qatar");
+      if (!host) return;
+      this.homeTeamName = homeSelect.value;
+      this.startWorldCup(host);
+    });
+    this.menuContainer!.appendChild(wcButton);
+
     document.body.appendChild(this.menuContainer);
   }
 
@@ -494,6 +539,7 @@ class SoccerGame {
    * Start the match after difficulty selection
    */
   private startMatch(): void {
+    this.matchResult = null;
     // Remove menu
     if (this.menuContainer) {
       this.menuContainer.remove();
@@ -527,6 +573,102 @@ class SoccerGame {
     // Start walkout animation
     this.gameState = GameState.WALKOUT;
     this.walkoutTime = 0;
+  }
+
+  /** Begin a world cup tournament */
+  private startWorldCup(host: string): void {
+    // Initialize tournament teams
+    const teams = [...international];
+    const index = teams.indexOf(this.homeTeamName);
+    if (index !== -1) teams.splice(index, 1);
+    // Shuffle remaining teams
+    for (let i = teams.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [teams[i], teams[j]] = [teams[j], teams[i]];
+    }
+    this.worldCup = {
+      active: true,
+      host,
+      stage: "round16",
+      playerTeam: this.homeTeamName,
+      remainingTeams: teams.slice(0, 15),
+      opponent: null,
+    };
+    alert(`Group stage complete! You advanced to the Round of 16 in ${host}.`);
+    this.nextWorldCupMatch();
+  }
+
+  /** Schedule the next world cup match */
+  private nextWorldCupMatch(): void {
+    if (!this.worldCup) return;
+    if (this.worldCup.stage === "champion") {
+      this.displayWorldCupTrophy();
+      return;
+    }
+    const oppIndex = Math.floor(
+      Math.random() * this.worldCup.remainingTeams.length
+    );
+    const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
+    this.worldCup.opponent = opponent;
+    this.awayTeamName = opponent;
+    this.startMatch();
+  }
+
+  /** Move tournament to the next stage */
+  private advanceWorldCup(): void {
+    if (!this.worldCup) return;
+    switch (this.worldCup.stage) {
+      case "round16":
+        this.worldCup.stage = "quarter";
+        break;
+      case "quarter":
+        this.worldCup.stage = "semi";
+        break;
+      case "semi":
+        this.worldCup.stage = "final";
+        break;
+      case "final":
+        this.worldCup.stage = "champion";
+        break;
+    }
+    if (this.worldCup.stage === "champion") {
+      this.displayWorldCupTrophy();
+    } else {
+      this.nextWorldCupMatch();
+    }
+  }
+
+  /** Show trophy celebration */
+  private displayWorldCupTrophy(): void {
+    if (!this.worldCup) return;
+    const stage = new THREE.Group();
+    const base = new THREE.Mesh(
+      new THREE.BoxGeometry(20, 1, 10),
+      new THREE.MeshLambertMaterial({ color: 0x222222 })
+    );
+    stage.add(base);
+    const trophy = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 1, 3, 16),
+      new THREE.MeshLambertMaterial({ color: 0xffd700 })
+    );
+    trophy.position.y = 2;
+    stage.add(trophy);
+    const leftFire = new THREE.Mesh(
+      new THREE.ConeGeometry(0.5, 2, 8),
+      new THREE.MeshLambertMaterial({ color: 0xff6600 })
+    );
+    const rightFire = leftFire.clone();
+    leftFire.position.set(-8, 1, 0);
+    rightFire.position.set(8, 1, 0);
+    stage.add(leftFire);
+    stage.add(rightFire);
+    stage.position.set(0, 0.5, 0);
+    this.scene.add(stage);
+    setTimeout(() => {
+      this.scene.remove(stage);
+      this.worldCup = null;
+      this.showMenu();
+    }, 8000);
   }
 
   /** Show options after the match ends */
@@ -577,6 +719,29 @@ class SoccerGame {
 
     styleBtn(restart);
     styleBtn(exit);
+
+    if (this.worldCup && this.worldCup.active) {
+      if (this.matchResult) {
+        const next = document.createElement("button");
+        next.textContent =
+          this.worldCup.stage === "final" ? "\ud83c\udfc6 Celebrate" : "Next Round";
+        styleBtn(next);
+        next.addEventListener("click", () => {
+          if (this.endContainer) {
+            this.endContainer.remove();
+            this.endContainer = null;
+          }
+          this.advanceWorldCup();
+        });
+        this.endContainer.appendChild(next);
+      } else {
+        const eliminated = document.createElement("div");
+        eliminated.textContent = "Eliminated from the World Cup";
+        eliminated.style.margin = "10px";
+        this.endContainer.appendChild(eliminated);
+        this.worldCup = null;
+      }
+    }
 
     restart.addEventListener("click", () => {
       if (this.endContainer) {
@@ -3817,6 +3982,7 @@ class SoccerGame {
         this.timeDisplay.textContent = homeWin
           ? `${this.homeTeamName} wins!`
           : `${this.awayTeamName} wins!`;
+      this.matchResult = homeWin;
       this.gameState = GameState.MENU;
       this.showEndOptions();
     }
@@ -3861,6 +4027,7 @@ class SoccerGame {
       this.timeDisplay.textContent = homeWin
         ? `${this.homeTeamName} wins!`
         : `${this.awayTeamName} wins!`;
+    this.matchResult = homeWin;
     this.gameState = GameState.MENU;
     this.showEndOptions();
   }
