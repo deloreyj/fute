@@ -612,6 +612,16 @@ class SoccerGame {
       }
     }
 
+    // If the chosen team isn't part of the groups, don't skip straight to
+    // knockouts. Alert the player and abort starting the tournament so the
+    // group stage is always played.
+    if (!playerGroup || groupOpponents.length === 0) {
+      alert(
+        `${this.homeTeamName} isn't in the World Cup groups. Please select a qualified team so the group stage can be played.`
+      );
+      return;
+    }
+
     // Select knockout stage teams (random 2 from each other group + 1 from player's)
     const remaining: string[] = [];
     for (const [group, teams] of Object.entries(worldCupGroups)) {
