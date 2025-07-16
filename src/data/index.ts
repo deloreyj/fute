@@ -8,3 +8,4 @@ export * from './primeira_liga';
 export * from './belgian_pro';
 export * from './mls';
 export * from './international';
+export * from './world_cup_2022_groups';

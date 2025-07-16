@@ -10,6 +10,7 @@ import {
   belgian_pro,
   mls,
   international,
+  getGroupOpponents,
 } from "./data";
 import { teamKits, TeamKit, FieldKit } from "./data/team_kits";
 
@@ -136,10 +137,12 @@ interface Foul {
 interface WorldCupState {
   active: boolean;
   host: string;
-  stage: "round16" | "quarter" | "semi" | "final" | "champion";
+  stage: "group" | "round16" | "quarter" | "semi" | "final" | "champion";
   playerTeam: string;
   remainingTeams: string[];
   opponent: string | null;
+  groupOpponents: string[];
+  groupIndex: number;
 }
 
 /**
@@ -597,10 +600,18 @@ class SoccerGame {
 
   /** Begin a world cup tournament */
   private startWorldCup(host: string): void {
-    // Initialize tournament teams
+    // Determine group opponents from 2022 World Cup
+    const groupOpp = getGroupOpponents(this.homeTeamName) || [];
+
+    // Prepare teams for knockout rounds (remove player and group opponents)
     const teams = [...international];
-    const index = teams.indexOf(this.homeTeamName);
-    if (index !== -1) teams.splice(index, 1);
+    const removeTeam = (t: string) => {
+      const idx = teams.indexOf(t);
+      if (idx !== -1) teams.splice(idx, 1);
+    };
+    removeTeam(this.homeTeamName);
+    groupOpp.forEach(removeTeam);
+
     // Shuffle remaining teams
     for (let i = teams.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -609,12 +620,14 @@ class SoccerGame {
     this.worldCup = {
       active: true,
       host,
-      stage: "round16",
+      stage: "group",
       playerTeam: this.homeTeamName,
       remainingTeams: teams.slice(0, 15),
       opponent: null,
+      groupOpponents: groupOpp,
+      groupIndex: 0,
     };
-    alert(`Group stage complete! You advanced to the Round of 16 in ${host}.`);
+    alert(`Starting World Cup group stage in ${host}!`);
     this.nextWorldCupMatch();
   }
 
@@ -625,18 +638,38 @@ class SoccerGame {
       this.displayWorldCupTrophy();
       return;
     }
-    const oppIndex = Math.floor(
-      Math.random() * this.worldCup.remainingTeams.length
-    );
-    const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
-    this.worldCup.opponent = opponent;
-    this.awayTeamName = opponent;
-    this.startMatch();
+    if (this.worldCup.stage === "group") {
+      if (this.worldCup.groupIndex >= this.worldCup.groupOpponents.length) {
+        alert(
+          `Group stage complete! You advanced to the Round of 16 in ${this.worldCup.host}.`
+        );
+        this.worldCup.stage = "round16";
+        this.nextWorldCupMatch();
+        return;
+      }
+      const opponent = this.worldCup.groupOpponents[this.worldCup.groupIndex];
+      this.worldCup.groupIndex++;
+      this.worldCup.opponent = opponent;
+      this.awayTeamName = opponent;
+      this.startMatch();
+    } else {
+      const oppIndex = Math.floor(
+        Math.random() * this.worldCup.remainingTeams.length
+      );
+      const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
+      this.worldCup.opponent = opponent;
+      this.awayTeamName = opponent;
+      this.startMatch();
+    }
   }
 
   /** Move tournament to the next stage */
   private advanceWorldCup(): void {
     if (!this.worldCup) return;
+    if (this.worldCup.stage === "group") {
+      this.nextWorldCupMatch();
+      return;
+    }
     switch (this.worldCup.stage) {
       case "round16":
         this.worldCup.stage = "quarter";
