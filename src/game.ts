@@ -131,13 +131,26 @@ interface Foul {
 }
 
 /**
+ * Group data for world cup
+ */
+interface WorldCupGroup {
+  teams: string[];
+  points: Record<string, number>;
+  played: Record<string, number>;
+}
+
+/**
  * Simple world cup tournament tracking
  */
 interface WorldCupState {
   active: boolean;
   host: string;
-  stage: "round16" | "quarter" | "semi" | "final" | "champion";
+  stage: "group" | "round16" | "quarter" | "semi" | "final" | "champion";
   playerTeam: string;
+  groups: Record<string, WorldCupGroup>;
+  playerGroup: string;
+  groupMatchIndex: number;
+  opponents: string[];
   remainingTeams: string[];
   opponent: string | null;
 }
@@ -596,16 +609,148 @@ class SoccerGame {
       const j = Math.floor(Math.random() * (i + 1));
       [teams[i], teams[j]] = [teams[j], teams[i]];
     }
+
+    const groupNames = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    const groups: Record<string, WorldCupGroup> = {};
+    // Randomly assign player's group
+    const playerGroup = groupNames[Math.floor(Math.random() * groupNames.length)];
+    let tIndex = 0;
+    for (const g of groupNames) {
+      const gTeams: string[] = [];
+      for (let i = 0; i < 4; i++) {
+        if (g === playerGroup && i === 0) {
+          gTeams.push(this.homeTeamName);
+        } else {
+          gTeams.push(teams[tIndex++]);
+        }
+      }
+      const points: Record<string, number> = {};
+      const played: Record<string, number> = {};
+      gTeams.forEach((t) => {
+        points[t] = 0;
+        played[t] = 0;
+      });
+      groups[g] = { teams: gTeams, points, played };
+    }
+
+    // Simulate all groups other than the player's
+    for (const g of groupNames) {
+      if (g === playerGroup) {
+        // Only simulate matches not involving the player
+        this.simulateGroup(groups[g], this.homeTeamName);
+      } else {
+        this.simulateGroup(groups[g]);
+      }
+    }
+
+    // Determine initial knockout teams from other groups
+    const remaining: string[] = [];
+    for (const g of groupNames) {
+      if (g === playerGroup) continue;
+      const standings = this.getGroupStandings(groups[g]);
+      remaining.push(standings[0][0], standings[1][0]);
+    }
+
+    const opponents = groups[playerGroup].teams.filter(
+      (t) => t !== this.homeTeamName
+    );
+
     this.worldCup = {
       active: true,
       host,
-      stage: "round16",
+      stage: "group",
       playerTeam: this.homeTeamName,
-      remainingTeams: teams.slice(0, 15),
+      groups,
+      playerGroup,
+      groupMatchIndex: 0,
+      opponents,
+      remainingTeams: remaining,
       opponent: null,
     };
-    alert(`Group stage complete! You advanced to the Round of 16 in ${host}.`);
+
     this.nextWorldCupMatch();
+  }
+
+  /** Simulate group stage matches */
+  private simulateGroup(
+    group: WorldCupGroup,
+    excludeTeam?: string
+  ): void {
+    const teams = group.teams;
+    for (let i = 0; i < teams.length; i++) {
+      for (let j = i + 1; j < teams.length; j++) {
+        const a = teams[i];
+        const b = teams[j];
+        if (excludeTeam && (a === excludeTeam || b === excludeTeam)) continue;
+        const r = Math.random();
+        if (r < 0.33) {
+          group.points[a] += 1;
+          group.points[b] += 1;
+        } else if (r < 0.66) {
+          group.points[a] += 3;
+        } else {
+          group.points[b] += 3;
+        }
+        group.played[a] += 1;
+        group.played[b] += 1;
+      }
+    }
+  }
+
+  private getGroupStandings(
+    group: WorldCupGroup
+  ): [string, number][] {
+    return [...group.teams]
+      .sort((a, b) => group.points[b] - group.points[a])
+      .map((t) => [t, group.points[t]]);
+  }
+
+  /** Finish the group stage and set up knockouts */
+  private finishGroupStage(): void {
+    if (!this.worldCup) return;
+    const group = this.worldCup.groups[this.worldCup.playerGroup];
+    const standings = this.getGroupStandings(group);
+    this.worldCup.remainingTeams.push(standings[0][0], standings[1][0]);
+    if (standings.findIndex((s) => s[0] === this.worldCup!.playerTeam) < 2) {
+      // Player eliminated
+      this.worldCup.active = false;
+    } else {
+      this.worldCup.stage = "round16";
+    }
+  }
+
+  /** Update world cup standings after a match */
+  private updateWorldCupAfterMatch(): void {
+    if (!this.worldCup) return;
+    if (this.worldCup.stage === "group") {
+      const opponent = this.worldCup.opponent;
+      if (!opponent) return;
+      const group = this.worldCup.groups[this.worldCup.playerGroup];
+      group.played[this.worldCup.playerTeam] += 1;
+      group.played[opponent] += 1;
+      if (this.matchResult === null) {
+        group.points[this.worldCup.playerTeam] += 1;
+        group.points[opponent] += 1;
+      } else if (this.matchResult) {
+        group.points[this.worldCup.playerTeam] += 3;
+      } else {
+        group.points[opponent] += 3;
+      }
+      this.worldCup.groupMatchIndex += 1;
+      if (this.worldCup.groupMatchIndex >= 3) {
+        const standings = this.getGroupStandings(group);
+        if (
+          standings.findIndex((s) => s[0] === this.worldCup!.playerTeam) < 2
+        ) {
+          this.worldCup.active = false;
+        }
+      }
+    } else {
+      // Knockout match
+      if (!this.matchResult) {
+        this.worldCup.active = false;
+      }
+    }
   }
 
   /** Schedule the next world cup match */
@@ -615,13 +760,20 @@ class SoccerGame {
       this.displayWorldCupTrophy();
       return;
     }
-    const oppIndex = Math.floor(
-      Math.random() * this.worldCup.remainingTeams.length
-    );
-    const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
-    this.worldCup.opponent = opponent;
-    this.awayTeamName = opponent;
-    this.startMatch();
+    if (this.worldCup.stage === "group") {
+      const opponent = this.worldCup.opponents[this.worldCup.groupMatchIndex];
+      this.worldCup.opponent = opponent;
+      this.awayTeamName = opponent;
+      this.startMatch();
+    } else {
+      const oppIndex = Math.floor(
+        Math.random() * this.worldCup.remainingTeams.length
+      );
+      const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
+      this.worldCup.opponent = opponent;
+      this.awayTeamName = opponent;
+      this.startMatch();
+    }
   }
 
   /** Move tournament to the next stage */
@@ -730,26 +882,81 @@ class SoccerGame {
     styleBtn(restart);
     styleBtn(exit);
 
-    if (this.worldCup && this.worldCup.active) {
-      if (this.matchResult) {
-        const next = document.createElement("button");
-        next.textContent =
-          this.worldCup.stage === "final" ? "\ud83c\udfc6 Celebrate" : "Next Round";
-        styleBtn(next);
-        next.addEventListener("click", () => {
-          if (this.endContainer) {
-            this.endContainer.remove();
-            this.endContainer = null;
-          }
-          this.advanceWorldCup();
+    if (this.worldCup) {
+      this.updateWorldCupAfterMatch();
+      if (this.worldCup.stage === "group") {
+        const group = this.worldCup.groups[this.worldCup.playerGroup];
+        const standings = this.getGroupStandings(group);
+        const table = document.createElement("div");
+        table.style.margin = "10px";
+        standings.forEach(([team, pts], idx) => {
+          const row = document.createElement("div");
+          row.textContent = `${idx + 1}. ${team} - ${pts} pts`;
+          table.appendChild(row);
         });
-        this.endContainer.appendChild(next);
+        this.endContainer.appendChild(table);
+
+        if (this.worldCup.groupMatchIndex >= 3) {
+          if (this.worldCup.active) {
+            const next = document.createElement("button");
+            next.textContent = "Next Round";
+            styleBtn(next);
+            next.addEventListener("click", () => {
+              if (this.endContainer) {
+                this.endContainer.remove();
+                this.endContainer = null;
+              }
+              this.finishGroupStage();
+              if (this.worldCup && this.worldCup.active) {
+                alert(
+                  `Group stage complete! You advanced to the Round of 16 in ${this.worldCup.host}.`
+                );
+                this.nextWorldCupMatch();
+              } else {
+                this.showMenu();
+              }
+            });
+            this.endContainer.appendChild(next);
+          } else {
+            const eliminated = document.createElement("div");
+            eliminated.textContent = "Eliminated from the World Cup";
+            eliminated.style.margin = "10px";
+            this.endContainer.appendChild(eliminated);
+          }
+        } else {
+          const next = document.createElement("button");
+          next.textContent = "Next Match";
+          styleBtn(next);
+          next.addEventListener("click", () => {
+            if (this.endContainer) {
+              this.endContainer.remove();
+              this.endContainer = null;
+            }
+            this.nextWorldCupMatch();
+          });
+          this.endContainer.appendChild(next);
+        }
       } else {
-        const eliminated = document.createElement("div");
-        eliminated.textContent = "Eliminated from the World Cup";
-        eliminated.style.margin = "10px";
-        this.endContainer.appendChild(eliminated);
-        this.worldCup = null;
+        if (this.matchResult) {
+          const next = document.createElement("button");
+          next.textContent =
+            this.worldCup.stage === "final" ? "\ud83c\udfc6 Celebrate" : "Next Round";
+          styleBtn(next);
+          next.addEventListener("click", () => {
+            if (this.endContainer) {
+              this.endContainer.remove();
+              this.endContainer = null;
+            }
+            this.advanceWorldCup();
+          });
+          this.endContainer.appendChild(next);
+        } else {
+          const eliminated = document.createElement("div");
+          eliminated.textContent = "Eliminated from the World Cup";
+          eliminated.style.margin = "10px";
+          this.endContainer.appendChild(eliminated);
+          this.worldCup = null;
+        }
       }
     }
 
