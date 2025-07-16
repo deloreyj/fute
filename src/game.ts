@@ -237,6 +237,9 @@ class SoccerGame {
   };
   private scoreboard: THREE.Group | null = null;
 
+  // League points
+  private teamPoints: Record<string, number> = {};
+
   // Match timing
   private halfDuration = 60; // seconds per half
   private currentHalf = 1;
@@ -586,6 +589,14 @@ class SoccerGame {
     this.scores.away = 0;
     this.updateCornerDisplay();
 
+    // Ensure teams exist in the points table
+    if (!(this.homeTeamName in this.teamPoints)) {
+      this.teamPoints[this.homeTeamName] = 0;
+    }
+    if (!(this.awayTeamName in this.teamPoints)) {
+      this.teamPoints[this.awayTeamName] = 0;
+    }
+
 
     // Reset match timing
     this.currentHalf = 1;
@@ -794,6 +805,11 @@ class SoccerGame {
 
     styleBtn(restart);
     styleBtn(exit);
+
+    const pointsSummary = document.createElement("div");
+    pointsSummary.textContent = `${this.homeTeamName}: ${this.teamPoints[this.homeTeamName] || 0} pts | ${this.awayTeamName}: ${this.teamPoints[this.awayTeamName] || 0} pts`;
+    pointsSummary.style.margin = "10px";
+    this.endContainer.appendChild(pointsSummary);
 
     if (this.worldCup && this.worldCup.active) {
       if (this.matchResult) {
@@ -4079,6 +4095,7 @@ class SoccerGame {
           ? `${this.homeTeamName} wins!`
           : `${this.awayTeamName} wins!`;
       this.matchResult = homeWin;
+      this.updateTeamPoints(homeWin);
       this.gameState = GameState.MENU;
       this.showEndOptions();
     }
@@ -4124,8 +4141,28 @@ class SoccerGame {
         ? `${this.homeTeamName} wins!`
         : `${this.awayTeamName} wins!`;
     this.matchResult = homeWin;
+    this.updateTeamPoints(homeWin);
     this.gameState = GameState.MENU;
     this.showEndOptions();
+  }
+
+  /** Apply league points based on match result */
+  private updateTeamPoints(result: boolean | null): void {
+    if (!(this.homeTeamName in this.teamPoints)) {
+      this.teamPoints[this.homeTeamName] = 0;
+    }
+    if (!(this.awayTeamName in this.teamPoints)) {
+      this.teamPoints[this.awayTeamName] = 0;
+    }
+
+    if (result === null) {
+      this.teamPoints[this.homeTeamName] += 1;
+      this.teamPoints[this.awayTeamName] += 1;
+    } else if (result) {
+      this.teamPoints[this.homeTeamName] += 3;
+    } else {
+      this.teamPoints[this.awayTeamName] += 3;
+    }
   }
 }
 
