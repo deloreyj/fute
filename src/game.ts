@@ -521,6 +521,11 @@ class SoccerGame {
     // Create referees
     this.createReferees();
 
+    // Reset scores for a new match
+    this.scores.home = 0;
+    this.scores.away = 0;
+    this.updateCornerDisplay();
+
 
     // Reset match timing
     this.currentHalf = 1;
@@ -2923,6 +2928,11 @@ class SoccerGame {
       this.humanPlayer.mesh.position.copy(currentPos);
       this.humanPlayer.mesh.rotation.copy(currentRot);
       this.humanPlayer.team = this.currentTeam;
+
+      // Reset score when switching teams mid-match
+      this.scores.home = 0;
+      this.scores.away = 0;
+      this.updateCornerDisplay();
     }
 
     // Update ball physics
