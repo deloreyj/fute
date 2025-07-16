@@ -1,3 +1,4 @@
+import { worldCup2022Kits } from "./world_cup_2022_kits";
 export interface FieldKit {
   shirtColors: number[];
   shortsColor: number;
@@ -10,7 +11,7 @@ export interface TeamKit {
   goalkeeper: FieldKit;
 }
 
-export const teamKits: Record<string, TeamKit> = {
+const baseTeamKits: Record<string, TeamKit> = {
   "Cercle Brugge": {
     "field": {
       "shirtColors": [
@@ -3846,3 +3847,5 @@ export const teamKits: Record<string, TeamKit> = {
     }
   }
 };
+
+export const teamKits: Record<string, TeamKit> = { ...baseTeamKits, ...worldCup2022Kits };
