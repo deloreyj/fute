@@ -10,6 +10,7 @@ import {
   belgian_pro,
   mls,
   international,
+  worldCupGroups,
 } from "./data";
 import { teamKits, TeamKit, FieldKit } from "./data/team_kits";
 
@@ -136,8 +137,11 @@ interface Foul {
 interface WorldCupState {
   active: boolean;
   host: string;
-  stage: "round16" | "quarter" | "semi" | "final" | "champion";
+  stage: "group" | "round16" | "quarter" | "semi" | "final" | "champion";
   playerTeam: string;
+  group: string;
+  groupOpponents: string[];
+  groupIndex: number;
   remainingTeams: string[];
   opponent: string | null;
 }
@@ -597,25 +601,54 @@ class SoccerGame {
 
   /** Begin a world cup tournament */
   private startWorldCup(host: string): void {
-    // Initialize tournament teams
-    const teams = [...international];
-    const index = teams.indexOf(this.homeTeamName);
-    if (index !== -1) teams.splice(index, 1);
-    // Shuffle remaining teams
-    for (let i = teams.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [teams[i], teams[j]] = [teams[j], teams[i]];
+    // Determine player's group and opponents based on 2022 World Cup groups
+    let playerGroup = "";
+    let groupOpponents: string[] = [];
+    for (const [group, teams] of Object.entries(worldCupGroups)) {
+      if (teams.includes(this.homeTeamName)) {
+        playerGroup = group;
+        groupOpponents = teams.filter((t) => t !== this.homeTeamName);
+        break;
+      }
     }
+
+    // Select knockout stage teams (random 2 from each other group + 1 from player's)
+    const remaining: string[] = [];
+    for (const [group, teams] of Object.entries(worldCupGroups)) {
+      if (group === playerGroup) continue;
+      const pool = [...teams];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      remaining.push(pool[0], pool[1]);
+    }
+    const shuffledOpp = [...groupOpponents];
+    for (let i = shuffledOpp.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledOpp[i], shuffledOpp[j]] = [shuffledOpp[j], shuffledOpp[i]];
+    }
+    remaining.push(shuffledOpp[0]);
+
     this.worldCup = {
       active: true,
       host,
-      stage: "round16",
+      stage: "group",
       playerTeam: this.homeTeamName,
-      remainingTeams: teams.slice(0, 15),
+      group: playerGroup,
+      groupOpponents,
+      groupIndex: 0,
+      remainingTeams: remaining,
       opponent: null,
     };
-    alert(`Group stage complete! You advanced to the Round of 16 in ${host}.`);
-    this.nextWorldCupMatch();
+
+    // Set kits for player's team and first opponent
+    this.homeKit = teamKits[this.homeTeamName] || this.homeKit;
+    this.awayTeamName = this.worldCup.groupOpponents[this.worldCup.groupIndex];
+    this.awayKit = teamKits[this.awayTeamName] || this.awayKit;
+    this.worldCup.groupIndex++;
+
+    this.startMatch();
   }
 
   /** Schedule the next world cup match */
@@ -625,18 +658,40 @@ class SoccerGame {
       this.displayWorldCupTrophy();
       return;
     }
-    const oppIndex = Math.floor(
-      Math.random() * this.worldCup.remainingTeams.length
-    );
-    const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
-    this.worldCup.opponent = opponent;
-    this.awayTeamName = opponent;
-    this.startMatch();
+    if (this.worldCup.stage === "group") {
+      if (this.worldCup.groupIndex <= this.worldCup.groupOpponents.length - 1) {
+        const opponent = this.worldCup.groupOpponents[this.worldCup.groupIndex];
+        this.worldCup.groupIndex++;
+        this.worldCup.opponent = opponent;
+        this.awayTeamName = opponent;
+        this.awayKit = teamKits[this.awayTeamName] || this.awayKit;
+        this.startMatch();
+      } else {
+        this.worldCup.stage = "round16";
+        alert(
+          `Group stage complete! You advanced to the Round of 16 in ${this.worldCup.host}.`
+        );
+        this.nextWorldCupMatch();
+      }
+    } else {
+      const oppIndex = Math.floor(
+        Math.random() * this.worldCup.remainingTeams.length
+      );
+      const opponent = this.worldCup.remainingTeams.splice(oppIndex, 1)[0];
+      this.worldCup.opponent = opponent;
+      this.awayTeamName = opponent;
+      this.awayKit = teamKits[this.awayTeamName] || this.awayKit;
+      this.startMatch();
+    }
   }
 
   /** Move tournament to the next stage */
   private advanceWorldCup(): void {
     if (!this.worldCup) return;
+    if (this.worldCup.stage === "group") {
+      this.nextWorldCupMatch();
+      return;
+    }
     switch (this.worldCup.stage) {
       case "round16":
         this.worldCup.stage = "quarter";
@@ -743,8 +798,13 @@ class SoccerGame {
     if (this.worldCup && this.worldCup.active) {
       if (this.matchResult) {
         const next = document.createElement("button");
-        next.textContent =
-          this.worldCup.stage === "final" ? "\ud83c\udfc6 Celebrate" : "Next Round";
+        if (this.worldCup.stage === "final") {
+          next.textContent = "\ud83c\udfc6 Celebrate";
+        } else if (this.worldCup.stage === "group") {
+          next.textContent = "Next Match";
+        } else {
+          next.textContent = "Next Round";
+        }
         styleBtn(next);
         next.addEventListener("click", () => {
           if (this.endContainer) {
