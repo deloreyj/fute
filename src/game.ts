@@ -534,19 +534,14 @@ class SoccerGame {
       wcButton.style.transform = "scale(1)";
     });
     wcButton.addEventListener("click", () => {
+      if (!international.includes(homeSelect.value)) {
+        alert("Please choose an international team from the dropdown first.");
+        return;
+      }
       const host = prompt("World Cup host country?", "Qatar");
       if (!host) return;
 
-      // Determine a sensible default team
-      const defaultTeam = international.includes(homeSelect.value)
-        ? homeSelect.value
-        : "Portugal";
-      const team = prompt(
-        "Choose your national team",
-        defaultTeam
-      );
-      if (!team || !international.includes(team)) return;
-      this.homeTeamName = team;
+      this.homeTeamName = homeSelect.value;
       this.startWorldCup(host);
     });
     this.menuContainer!.appendChild(wcButton);
