@@ -532,7 +532,17 @@ class SoccerGame {
     wcButton.addEventListener("click", () => {
       const host = prompt("World Cup host country?", "Qatar");
       if (!host) return;
-      this.homeTeamName = homeSelect.value;
+
+      // Determine a sensible default team
+      const defaultTeam = international.includes(homeSelect.value)
+        ? homeSelect.value
+        : "Portugal";
+      const team = prompt(
+        "Choose your national team",
+        defaultTeam
+      );
+      if (!team || !international.includes(team)) return;
+      this.homeTeamName = team;
       this.startWorldCup(host);
     });
     this.menuContainer!.appendChild(wcButton);
