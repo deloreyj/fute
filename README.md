@@ -28,6 +28,7 @@ Yo! Welcome to our awesome 3D soccer game where you can live out your Sporting C
 - Score a goal and watch the whole place go nuts
 - Confetti! Because GOALS = PARTY 🎉
 - Challenge yourself in the new **World Cup mode** and lift the trophy
+  - Select your favorite international squad from the team menu – clubs aren't allowed!
 
 ### Sounds of the Game
 
